@@ -1,0 +1,1 @@
+{"repos": [{"repoId": "unsloth/llama-3.2-1b-instruct", "repoType": "model", "commitHash": "5a8abab4a5d6f164389b1079fb721cfab8d7126c", "filePaths": ["config.json", "tokenizer.json", "model.safetensors", "tokenizer_config.json", "chat_template.jinja", "special_tokens_map.json"]}]}

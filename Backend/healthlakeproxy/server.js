@@ -1,4 +1,37 @@
 ﻿// server.js (NO AUTH)
+
+const MODEL_URL = process.env.MODEL_URL || 'http://localhost:8001'; // triage model service
+
+async function callModelTriage({ patientId, answers, transcript }) {
+  const payload = { patientId, answers, transcript };
+
+  const resp = await fetch(`${MODEL_URL}/triage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const contentType = resp.headers.get('content-type') || '';
+  const data = contentType.includes('application/json')
+    ? await resp.json()
+    : { error: await resp.text() };
+
+  if (!resp.ok || data.error) {
+    const msg = data.error || `Model error HTTP ${resp.status}`;
+    throw new Error(msg);
+  }
+
+  // Normalize / validate color
+  let color = String(data.color || '').toLowerCase();
+  if (!['red', 'orange', 'yellow'].includes(color)) {
+    color = 'yellow'; // fallback
+  }
+
+  const rationale = data.rationale || 'Model did not provide rationale.';
+  return { color, rationale };
+}
+
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -135,25 +168,10 @@ app.post('/api/intake', async (req, res) => {
       return res.status(400).json({ error: 'patientId is required' });
     }
 
-    // --- very simple triage classifier (keyword-based) ---
-    const text = [
-      ...answers.map(a => `${a.text}: ${a.answer}`),
-      transcript || ''
-    ].join('\n').toLowerCase();
+    // 1) Ask LLaMA / model service for triage
+    const { color, rationale } = await callModelTriage({ patientId, answers, transcript });
 
-    let color = 'yellow';
-    let rationale = 'Default (no critical keywords found).';
-
-    const has = (w) => text.includes(w);
-    if (has('chest pain') || has('shortness of breath') || has('unconscious') || has('severe bleeding')) {
-      color = 'red';
-      rationale = 'High-risk keywords detected (e.g., chest pain / SOB / LOC / severe bleeding).';
-    } else if (has('worsening') || has('fever') || has('moderate pain') || has('can’t keep fluids')) {
-      color = 'orange';
-      rationale = 'Moderate-risk keywords detected (worsening symptoms / fever / moderate pain).';
-    }
-
-    // --- Create a FHIR Observation in HealthLake ---
+    // 2) Create a FHIR Observation in HealthLake (unchanged)
     const nowIso = new Date().toISOString();
     const obs = {
       resourceType: 'Observation',
@@ -171,7 +189,6 @@ app.post('/api/intake', async (req, res) => {
         { text: `Rationale: ${rationale}` },
         { text: `Transcript:\n${transcript}` }
       ],
-      // keep answers in a safe extension blob (optional)
       extension: [{
         url: 'http://example.org/triage-answers',
         valueString: JSON.stringify(answers)
@@ -184,7 +201,6 @@ app.post('/api/intake', async (req, res) => {
       body: obs
     });
 
-    // Respond to UI
     res.json({
       id: created?.id || null,
       color,
@@ -195,6 +211,7 @@ app.post('/api/intake', async (req, res) => {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
+
 // GET /api/triage-detail?riskId=Observation/<id> or just <id>
 app.get('/api/triage-detail', async (req, res) => {
   try {
