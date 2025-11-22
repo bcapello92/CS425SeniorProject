@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
-MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  # update to your path
+MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  
 
 app = FastAPI()
 
