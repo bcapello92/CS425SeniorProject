@@ -8,7 +8,9 @@ export default function ProviderTriage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
+  // open/close map by riskId
   const [open, setOpen] = useState({});
+  // details cache by riskId: { loading, error, data }
   const [detail, setDetail] = useState({});
 
   async function loadBoard() {
@@ -50,7 +52,10 @@ export default function ProviderTriage() {
       await triageClient.setFlag(riskId, key, value);
       setDetail(prev => {
         const d = prev[riskId]?.data || {};
-        const next = { ...(prev[riskId] || {}), data: { ...d, flags: { ...(d.flags || {}), [key]: value } } };
+        const next = {
+          ...(prev[riskId] || {}),
+          data: { ...d, flags: { ...(d.flags || {}), [key]: value } },
+        };
         return { ...prev, [riskId]: next };
       });
     } catch (e) {
@@ -58,23 +63,71 @@ export default function ProviderTriage() {
     }
   }
 
- async function setOverride(riskId, newColor, reason) {
-  try {
-    await triageClient.setOverride(riskId, newColor, reason);
-    setDetail(prev => {
-      const d = prev[riskId]?.data || {};
-      const next = {
-        ...(prev[riskId] || {}),
-        data: { ...d, color: newColor }
-      };
-      return { ...prev, [riskId]: next };
-    });
-    loadBoard(); // refresh group counts/columns
-  } catch (e) {
-    alert(`Failed to set override: ${e?.message || e}`);
-  }
-}
+  // item = board card, currentColor = its current triage color, newColor = target color
+  async function setOverride(item, currentColor, newColor) {
+    const riskId = item.riskId;
 
+    if (!newColor || newColor === currentColor) return;
+
+    const reason = window.prompt(
+      `Why are you changing this triage from ${labelForColor(currentColor)} to ${labelForColor(newColor)}? (optional)`,
+      ''
+    );
+    if (reason === null) {
+      // user hit Cancel
+      return;
+    }
+
+    try {
+      await triageClient.setOverride(riskId, newColor, reason || null);
+
+      // 1) Update detail pill (expanded view)
+      setDetail(prev => {
+        const d = prev[riskId]?.data || {};
+        const next = { ...(prev[riskId] || {}), data: { ...d, color: newColor } };
+        return { ...prev, [riskId]: next };
+      });
+
+      // 2) Move card between columns in the board immediately
+      setData(prev => {
+        if (!prev) return prev;
+        const oldGroups = prev.groups || { red: [], orange: [], yellow: [] };
+        const newGroups = { red: [], orange: [], yellow: [] };
+
+        // Remove from all groups, then reinsert into newColor group
+        for (const col of ['red', 'orange', 'yellow']) {
+          for (const it of oldGroups[col] || []) {
+            if (it.riskId === riskId) continue; // skip old instance
+            newGroups[col].push(it);
+          }
+        }
+
+        // push updated item into new group
+        newGroups[newColor].push({
+          ...item,
+          color: newColor,
+        });
+
+        // recompute counts
+        const counts = {
+          red: newGroups.red.length,
+          orange: newGroups.orange.length,
+          yellow: newGroups.yellow.length,
+        };
+
+        return {
+          ...prev,
+          groups: newGroups,
+          counts,
+        };
+      });
+
+      // 3) (Optional) refresh from server to stay in sync with HL
+      loadBoard();
+    } catch (e) {
+      alert(`Failed to set override: ${e?.message || e}`);
+    }
+  }
 
   const groups = data?.groups || { red: [], orange: [], yellow: [] };
 
@@ -118,7 +171,7 @@ export default function ProviderTriage() {
         {!err && !loading && data && (
           <div style={{ marginBottom: 12, color: '#555', textAlign: 'center' }}>
             Since {new Date(data.since).toLocaleString()} — Totals:
-            {' '}RED {data.counts?.red || 0}, ORANGE {data.counts?.orange || 0}, YELLOW {data.counts?.yellow || 0}
+            {' '}Severe {data.counts?.red || 0}, Moderate {data.counts?.orange || 0}, Routine {data.counts?.yellow || 0}
           </div>
         )}
 
@@ -140,7 +193,15 @@ export default function ProviderTriage() {
                 boxShadow: '0 1px 8px rgba(0,0,0,0.05)'
               }}
             >
-              <div style={{ padding: 10, color: '#fff', background: colorBg(color), fontWeight: 700, textAlign: 'center' }}>
+              <div
+                style={{
+                  padding: 10,
+                  color: '#fff',
+                  background: colorBg(color),
+                  fontWeight: 700,
+                  textAlign: 'center'
+                }}
+              >
                 {labelForColor(color)} ({groups[color]?.length || 0})
               </div>
 
@@ -158,7 +219,9 @@ export default function ProviderTriage() {
                         <div>
                           <b>{item.patientName}</b>{' '}
                           <code style={{ opacity: 0.7 }}>{item.patientId}</code>
-                          <div style={{ fontSize: 12, color: '#666' }}>{new Date(item.date).toLocaleString()}</div>
+                          <div style={{ fontSize: 12, color: '#666' }}>
+                            {new Date(item.date).toLocaleString()}
+                          </div>
                         </div>
                         <div style={{ fontSize: 12, opacity: 0.8 }}>{isOpen ? '▲' : '▼'}</div>
                       </div>
@@ -182,7 +245,7 @@ export default function ProviderTriage() {
                                     fontWeight: 600
                                   }}
                                 >
-                                  {String(d.data.color || '').toUpperCase()}
+                                  {labelForColor(d.data.color)}
                                 </span>
                                 <div style={{ marginTop: 6, color: '#555' }}>
                                   {d.data.rationale || '—'}
@@ -223,43 +286,17 @@ export default function ProviderTriage() {
 
                                 <span style={{ marginLeft: 'auto' }}>
                                   Override:
-                                  const currentColor = d?.data?.color || color;
-
-<select
-  value={currentColor}
-  onChange={e => {
-    const newColor = e.target.value;
-    if (newColor === currentColor) return;
-
-    const reason = window.prompt(
-      'Reason for changing triage level (this will be recorded):'
-    );
-
-    if (reason === null) {
-      // user cancelled -> revert select to previous value
-      setDetail(prev => {
-        const dPrev = prev[item.riskId];
-        if (!dPrev) return prev;
-        return {
-          ...prev,
-          [item.riskId]: {
-            ...dPrev,
-            data: { ...dPrev.data, color: currentColor }
-          }
-        };
-      });
-      return;
-    }
-
-    setOverride(item.riskId, newColor, reason);
-  }}
-  style={{ marginLeft: 6 }}
->
-  <option value="red">Red</option>
-  <option value="orange">Orange</option>
-  <option value="yellow">Yellow</option>
-</select>
-
+                                  <select
+                                    value={d.data?.color || color}
+                                    onChange={e =>
+                                      setOverride(item, d.data?.color || color, e.target.value)
+                                    }
+                                    style={{ marginLeft: 6 }}
+                                  >
+                                    <option value="red">Severe (Red)</option>
+                                    <option value="orange">Moderate (Orange)</option>
+                                    <option value="yellow">Routine (Yellow)</option>
+                                  </select>
                                 </span>
                               </div>
                             </>
@@ -269,7 +306,9 @@ export default function ProviderTriage() {
                     </div>
                   );
                 })}
-                {!groups[color]?.length && <div style={{ color: '#666', textAlign: 'center' }}>None</div>}
+                {!groups[color]?.length && (
+                  <div style={{ color: '#666', textAlign: 'center' }}>None</div>
+                )}
               </div>
             </div>
           ))}
@@ -280,13 +319,13 @@ export default function ProviderTriage() {
 }
 
 function colorBg(c) {
-  return c === 'red' ? '#dc2626' :
-         c === 'orange' ? '#ea580c' :
-         c === 'yellow' ? '#ca8a04'; // yellow
+  if (c === 'red') return '#dc2626';
+  if (c === 'orange') return '#ea580c';
+  return '#ca8a04'; // default / yellow
 }
 
-function labelForColor(c){
-    return c==='red' ? 'Severe'
-           c==='orange' ? 'Moderate'
-           c==='yellow' ? 'Routine'
+function labelForColor(c) {
+  if (c === 'red') return 'Severe';
+  if (c === 'orange') return 'Moderate';
+  return 'Routine';
 }

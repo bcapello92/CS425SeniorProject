@@ -66,7 +66,7 @@ class TriageClient {
       body: { color, reason },
     }
   );
+ }
 }
-
 
 export const triageClient = new TriageClient();
