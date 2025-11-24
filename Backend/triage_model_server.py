@@ -2,6 +2,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from pii_removal import _scrub_text_quick, age_bucket_hipaa
+
 import torch
 
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  # update to your path
@@ -19,12 +21,28 @@ class IntakePayload(BaseModel):
   patientId: str
   answers: list[dict] = []
   transcript: str = ""
+  age: int | None = None
+  gender: str | None = None
 
 def build_prompt(payload: IntakePayload) -> str:
-    answers_text = "\n".join(
-        f"- {a.get('text', '')}: {a.get('answer', '')}"
-        for a in payload.answers
-    )
+    # scrub each answer text & answer body
+    cleaned_answers = []
+    for a in payload.answers:
+        q_text = _scrub_text_quick(a.get("text", ""))
+        a_text = _scrub_text_quick(a.get("answer", ""))
+        cleaned_answers.append(f"- {q_text}: {a_text}")
+
+    answers_text = "\n".join(cleaned_answers)
+
+    # scrub full transcript
+    cleaned_transcript = _scrub_text_quick(payload.transcript)
+
+    # optional: age bucket header if you start passing age
+    age_tag = ""
+    if payload.age is not None:
+        age_group = age_bucket_hipaa(payload.age)
+        if age_group:
+            age_tag = f"[AGE_GROUP={age_group}]\n"
 
     return f"""
 You are a triage assistant. Based on the patient intake information, assign a triage color and explain why.
@@ -37,16 +55,15 @@ Triage colors:
 Return a single JSON object with two keys: "color" and "rationale".
 The "color" MUST be exactly one of: "red", "orange", "yellow".
 
-Patient ID: {payload.patientId}
-
-Answers:
+{age_tag}Answers:
 {answers_text}
 
 Transcript:
-{payload.transcript}
+{cleaned_transcript}
 
 Respond with JSON only.
 """.strip()
+
 
 
 import torch
