@@ -246,7 +246,12 @@ app.get('/api/triage-detail', async (req, res) => {
     if (ext?.valueString) {
       try { answers = JSON.parse(ext.valueString); } catch {}
     }
-
+    // --- flags (contacted / scheduled etc.) ---
+    let flags = {};
+    const flagsExt = (obs.extension || []).find(e => e.url === 'http://example.org/triage-flags');
+    if (flagsExt?.valueString) {
+        try { flags = JSON.parse(flagsExt.valueString); } catch {}
+    }   
     // --- patient info (optional) ---
     let patient = null;
     const patientRef = obs?.subject?.reference; // e.g. "Patient/123"
@@ -267,7 +272,107 @@ app.get('/api/triage-detail', async (req, res) => {
       rationale: rationale || null,
       answers,
       patient
+      flags
     });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/triage-cases/:riskId/flags', async (req, res) => {
+  try {
+    const riskId = decodeURIComponent(req.params.riskId || '').replace(/^Observation\//, '');
+    if (!riskId) return res.status(400).json({ error: 'riskId is required' });
+
+    // get current Observation
+    const obs = await signedFetch({ path: `/Observation/${encodeURIComponent(riskId)}` });
+
+    const extUrl = 'http://example.org/triage-flags';
+    const exts = obs.extension || [];
+    let existing = exts.find(e => e.url === extUrl);
+
+    let flags = {};
+    if (existing?.valueString) {
+      try { flags = JSON.parse(existing.valueString); } catch { /* ignore */ }
+    }
+
+    // merge incoming flags
+    Object.assign(flags, req.body || {});
+
+    if (existing) {
+      existing.valueString = JSON.stringify(flags);
+    } else {
+      exts.push({ url: extUrl, valueString: JSON.stringify(flags) });
+      obs.extension = exts;
+    }
+
+    // write back full Observation (FHIR uses PUT, not JSON patch)
+    await signedFetch({
+      method: 'PUT',
+      path: `/Observation/${encodeURIComponent(riskId)}`,
+      body: obs
+    });
+
+    res.json({ ok: true, flags });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+// PATCH /api/triage-cases/:riskId/override
+// Body: { color: 'red'|'orange'|'yellow', reason?: string }
+app.patch('/api/triage-cases/:riskId/override', async (req, res) => {
+  try {
+    const riskId = decodeURIComponent(req.params.riskId || '').replace(/^Observation\//, '');
+    if (!riskId) return res.status(400).json({ error: 'riskId is required' });
+
+    const { color, reason } = req.body || {};
+    const normColor = String(color || '').toLowerCase();
+    if (!['red','orange','yellow'].includes(normColor)) {
+      return res.status(400).json({ error: 'color must be red|orange|yellow' });
+    }
+
+    // load Observation
+    const obs = await signedFetch({ path: `/Observation/${encodeURIComponent(riskId)}` });
+
+    // 1) update valueCodeableConcept (canonical color)
+    obs.valueCodeableConcept = obs.valueCodeableConcept || {};
+    obs.valueCodeableConcept.text = normColor;
+    obs.valueCodeableConcept.coding = [{
+      system: 'http://example.org/triage-color',
+      code: normColor
+    }];
+
+    // 2) update / add "Triage: <color>" note so /api/triage-cases grouping stays in sync
+    const notes = obs.note || [];
+    const triageNoteIdx = notes.findIndex(n => /^triage\s*:/i.test(n?.text || ''));
+    const triageText = `Triage: ${normColor}`;
+    if (triageNoteIdx >= 0) {
+      notes[triageNoteIdx].text = triageText;
+    } else {
+      notes.push({ text: triageText });
+    }
+
+    // 3) record override reason in an extension
+    const overrideUrl = 'http://example.org/triage-override';
+    const exts = obs.extension || [];
+    const ts = new Date().toISOString();
+    const payload = { color: normColor, reason: reason || null, at: ts };
+    const existing = exts.find(e => e.url === overrideUrl);
+    if (existing) {
+      existing.valueString = JSON.stringify(payload);
+    } else {
+      exts.push({ url: overrideUrl, valueString: JSON.stringify(payload) });
+      obs.extension = exts;
+    }
+
+    // write back Observation
+    await signedFetch({
+      method: 'PUT',
+      path: `/Observation/${encodeURIComponent(riskId)}`,
+      body: obs
+    });
+
+    res.json({ ok: true, color: normColor, override: payload });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }

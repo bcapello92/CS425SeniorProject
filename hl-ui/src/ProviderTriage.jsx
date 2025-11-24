@@ -58,19 +58,23 @@ export default function ProviderTriage() {
     }
   }
 
-  async function setOverride(riskId, newColor) {
-    try {
-      await triageClient.setOverride(riskId, newColor);
-      setDetail(prev => {
-        const d = prev[riskId]?.data || {};
-        const next = { ...(prev[riskId] || {}), data: { ...d, color: newColor } };
-        return { ...prev, [riskId]: next };
-      });
-      loadBoard();
-    } catch (e) {
-      alert(`Failed to set override: ${e?.message || e}`);
-    }
+ async function setOverride(riskId, newColor, reason) {
+  try {
+    await triageClient.setOverride(riskId, newColor, reason);
+    setDetail(prev => {
+      const d = prev[riskId]?.data || {};
+      const next = {
+        ...(prev[riskId] || {}),
+        data: { ...d, color: newColor }
+      };
+      return { ...prev, [riskId]: next };
+    });
+    loadBoard(); // refresh group counts/columns
+  } catch (e) {
+    alert(`Failed to set override: ${e?.message || e}`);
   }
+}
+
 
   const groups = data?.groups || { red: [], orange: [], yellow: [] };
 
@@ -137,7 +141,7 @@ export default function ProviderTriage() {
               }}
             >
               <div style={{ padding: 10, color: '#fff', background: colorBg(color), fontWeight: 700, textAlign: 'center' }}>
-                {color.toUpperCase()} ({groups[color]?.length || 0})
+                {labelForColor(color)} ({groups[color]?.length || 0})
               </div>
 
               <div style={{ padding: 10, maxHeight: 520, overflow: 'auto' }}>
@@ -219,15 +223,43 @@ export default function ProviderTriage() {
 
                                 <span style={{ marginLeft: 'auto' }}>
                                   Override:
-                                  <select
-                                    value={d.data?.color || color}
-                                    onChange={e => setOverride(item.riskId, e.target.value)}
-                                    style={{ marginLeft: 6 }}
-                                  >
-                                    <option value="red">Red</option>
-                                    <option value="orange">Orange</option>
-                                    <option value="yellow">Yellow</option>
-                                  </select>
+                                  const currentColor = d?.data?.color || color;
+
+<select
+  value={currentColor}
+  onChange={e => {
+    const newColor = e.target.value;
+    if (newColor === currentColor) return;
+
+    const reason = window.prompt(
+      'Reason for changing triage level (this will be recorded):'
+    );
+
+    if (reason === null) {
+      // user cancelled -> revert select to previous value
+      setDetail(prev => {
+        const dPrev = prev[item.riskId];
+        if (!dPrev) return prev;
+        return {
+          ...prev,
+          [item.riskId]: {
+            ...dPrev,
+            data: { ...dPrev.data, color: currentColor }
+          }
+        };
+      });
+      return;
+    }
+
+    setOverride(item.riskId, newColor, reason);
+  }}
+  style={{ marginLeft: 6 }}
+>
+  <option value="red">Red</option>
+  <option value="orange">Orange</option>
+  <option value="yellow">Yellow</option>
+</select>
+
                                 </span>
                               </div>
                             </>
@@ -250,5 +282,11 @@ export default function ProviderTriage() {
 function colorBg(c) {
   return c === 'red' ? '#dc2626' :
          c === 'orange' ? '#ea580c' :
-         '#ca8a04'; // yellow
+         c === 'yellow' ? '#ca8a04'; // yellow
+}
+
+function labelForColor(c){
+    return c==='red' ? 'Severe'
+           c==='orange' ? 'Moderate'
+           c==='yellow' ? 'Routine'
 }

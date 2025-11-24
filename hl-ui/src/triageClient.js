@@ -58,16 +58,15 @@ class TriageClient {
       }
     );
   }
-
-  async setOverride(riskId, color) {
-    return this._request(
-      `/api/triage-cases/${encodeURIComponent(riskId)}/override`,
-      {
-        method: 'PATCH',
-        body: { color },
-      }
-    );
-  }
+  async setOverride(riskId, color, reason) {
+  return this._request(
+    `/api/triage-cases/${encodeURIComponent(riskId)}/override`,
+    {
+      method: 'PATCH',
+      body: { color, reason },
+    }
+  );
 }
+
 
 export const triageClient = new TriageClient();
