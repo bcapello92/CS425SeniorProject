@@ -1,0 +1,10 @@
+* [33m3ddd0c7[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m added SFT config for training args to Trainer
+* [33ma96b680[m added SFT config for training args to Trainer
+* [33m5970c89[m imports
+* [33m1e6e695[m added finetuning script
+* [33me778008[m added full finetune script
+* [33m41d7dfa[m imports
+* [33mb11a329[m inference script w/ confidence on pred
+* [33m92c5adb[m added base, cot, few-shot prompts and made a prompt registry
+* [33m9a02b44[m imports
+* [33me293e48[m Added data loader + preprocess and formatting_prompt_func
