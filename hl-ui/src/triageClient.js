@@ -1,22 +1,30 @@
 // src/triageClient.js
+import { getIdToken } from "./auth";
 
 const BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ||
-  'http://localhost:4000'; // adjust if needed
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
 
 class TriageClient {
-  // ---------- low-level helper ----------
-  async _request(path, { method = 'GET', body } = {}) {
+  async _request(path, { method = "GET", body } = {}) {
+    const headers = {};
+
+    if (body) {
+      headers["content-type"] = "application/json";
+    }
+
+    const token = getIdToken();
+    if (token) {
+      headers["authorization"] = `Bearer ${token}`;
+    }
+
     const res = await fetch(`${BASE}${path}`, {
       method,
-      headers: body
-        ? { 'content-type': 'application/json' }
-        : undefined,
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json')
+    const ct = res.headers.get("content-type") || "";
+    const data = ct.includes("application/json")
       ? await res.json()
       : { error: await res.text() };
 
@@ -27,16 +35,13 @@ class TriageClient {
     return data;
   }
 
-  // ---------- Patient Intake ----------
   async submitIntake({ patientId, answers, transcript }) {
-    // POST /api/intake – your current endpoint
-    return this._request('/api/intake', {
-      method: 'POST',
+    return this._request("/api/intake", {
+      method: "POST",
       body: { patientId, answers, transcript },
     });
   }
 
-  // ---------- Provider Triage board ----------
   async getBoard({ sinceHours }) {
     return this._request(
       `/api/triage-cases?sinceHours=${encodeURIComponent(sinceHours)}`
@@ -53,20 +58,21 @@ class TriageClient {
     return this._request(
       `/api/triage-cases/${encodeURIComponent(riskId)}/flags`,
       {
-        method: 'PATCH',
+        method: "PATCH",
         body: { [key]: value },
       }
     );
   }
+
   async setOverride(riskId, color, reason) {
-  return this._request(
-    `/api/triage-cases/${encodeURIComponent(riskId)}/override`,
-    {
-      method: 'PATCH',
-      body: { color, reason },
-    }
-  );
- }
+    return this._request(
+      `/api/triage-cases/${encodeURIComponent(riskId)}/override`,
+      {
+        method: "PATCH",
+        body: { color, reason },
+      }
+    );
+  }
 }
 
 export const triageClient = new TriageClient();
