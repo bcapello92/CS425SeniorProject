@@ -1,0 +1,6 @@
+VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
+VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
+VITE_COGNITO_REGION=us-east-1
+
+VITE_COGNITO_REDIRECT_URI=http://localhost:5173
+VITE_COGNITO_LOGOUT_URI=http://localhost:5173
