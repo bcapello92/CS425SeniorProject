@@ -1,7 +1,7 @@
 ﻿// hl-ui/src/ProviderTriage.jsx
 import { useEffect, useState } from 'react';
 import { triageClient } from './triageClient';
-import { getIdToken } from "./auth";
+
 
 export default function ProviderTriage() {
   const [data, setData] = useState(null);

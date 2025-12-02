@@ -1,19 +1,19 @@
-﻿// hl-ui/src/App.jsx
-import { useState } from "react";
-import ProviderTriage from "./ProviderTriage";
-import PatientChatIntake from "./PatientChatIntake";
-import { useAuth } from "./useAuth";
-import { buildLoginUrl, buildLogoutUrl } from "./auth";
+﻿import { useState } from "react";
+import ProviderTriage from "./ProviderTriage.jsx";
+import PatientChatIntake from "./PatientChatIntake.jsx";
+import { useAuth } from "./useAuth.jsx";        
+
+
 
 export default function App() {
   const [view, setView] = useState("provider");
-  const { loading, isAuthenticated, logout } = useAuth();
+  // Include 'login' from the context
+  const { loading, isAuthenticated, login, logout } = useAuth();
 
-  // If not authed and user clicks Provider, send them to Cognito login
   function handleTabClick(nextView) {
     if (nextView === "provider" && !isAuthenticated) {
-      const loginUrl = buildLoginUrl();
-      window.location.href = loginUrl;
+      // Use the login function from the context, which is async/awaited internally
+      login();
       return;
     }
     setView(nextView);
@@ -62,16 +62,16 @@ export default function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {loading ? (
-            <span style={{ fontSize: 12, color: "#666" }}>Checking login…</span>
+            <span style={{ fontSize: 12, color: "#666" }}>
+              Checking login…
+            </span>
           ) : isAuthenticated ? (
             <>
               <span style={{ fontSize: 12, color: "#666" }}>Logged in</span>
               <button
                 style={tab(false)}
-                onClick={() => {
-                  logout();
-                  window.location.href = buildLogoutUrl();
-                }}
+                // Use the logout function from the context, which handles the redirect
+                onClick={logout}
               >
                 Logout
               </button>
@@ -79,9 +79,8 @@ export default function App() {
           ) : (
             <button
               style={tab(false)}
-              onClick={() => {
-                window.location.href = buildLoginUrl();
-              }}
+              // Use the login function from the context
+              onClick={login}
             >
               Login
             </button>

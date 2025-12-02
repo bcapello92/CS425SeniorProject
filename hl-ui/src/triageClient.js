@@ -1,20 +1,20 @@
-// src/triageClient.js
-import { getIdToken } from "./auth";
+// hl-ui/src/triageClient.js
+import { getIdToken } from "./auth.jsx";
 
 const BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
+  "http://localhost:4000";
 
 class TriageClient {
   async _request(path, { method = "GET", body } = {}) {
-    const headers = {};
+    const token = getIdToken();
 
+    const headers = {};
     if (body) {
       headers["content-type"] = "application/json";
     }
-
-    const token = getIdToken();
     if (token) {
-      headers["authorization"] = `Bearer ${token}`;
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
     const res = await fetch(`${BASE}${path}`, {

@@ -1,38 +1,87 @@
-// src/useAuth.js
-import { useEffect, useState } from "react";
-import { getIdToken, parseTokensFromHash, clearIdToken } from "./auth";
+// hl-ui/src/useAuth.jsx
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import {
+  COGNITO_REDIRECT_URI,
+  buildLoginUrl,
+  buildLogoutUrl,
+} from "./auth.jsx";
 
-export function useAuth() {
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
-  const [idToken, setIdTokenState] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [idToken, setIdToken] = useState(null);
 
   useEffect(() => {
-    // 1) Maybe we just came back from Cognito and have tokens in URL hash
-    const parsed = parseTokensFromHash();
-    if (parsed?.idToken) {
-      setIdTokenState(parsed.idToken);
-      setLoading(false);
-      return;
+    let token = null;
+
+    // 1) If we're on the callback URL and see an id_token in the hash, capture it
+    const hash = window.location.hash || "";
+    const currentPath = window.location.pathname;
+    const callbackPath = new URL(COGNITO_REDIRECT_URI).pathname;
+
+    if (hash && currentPath === callbackPath) {
+      const params = new URLSearchParams(hash.replace(/^#/, ""));
+      const idTokenFromHash = params.get("id_token");
+      const accessToken = params.get("access_token");
+
+      if (idTokenFromHash) {
+        token = idTokenFromHash;
+        localStorage.setItem("id_token", token);
+        if (accessToken) {
+          localStorage.setItem("access_token", accessToken);
+        }
+
+        // Clean up URL so the hash disappears and go back to main app
+        window.history.replaceState(null, "", "/");
+      }
     }
 
-    // 2) Otherwise, see if we have something stored
-    const existing = getIdToken();
-    if (existing) {
-      setIdTokenState(existing);
+    // 2) If we didn't just get a token from the hash, try localStorage
+    if (!token) {
+      token = localStorage.getItem("id_token");
+    }
+
+    if (token) {
+      setIsAuthenticated(true);
+      setIdToken(token);
+    } else {
+      setIsAuthenticated(false);
+      setIdToken(null);
     }
 
     setLoading(false);
   }, []);
 
   function logout() {
-    clearIdToken();
-    setIdTokenState(null);
+    localStorage.removeItem("id_token");
+    localStorage.removeItem("access_token");
+    setIsAuthenticated(false);
+    setIdToken(null);
+
+    // Optional: also kick user to Cognito logout endpoint
+    window.location.href = buildLogoutUrl();
   }
 
-  return {
-    loading,
-    idToken,
-    isAuthenticated: !!idToken,
-    logout,
-  };
+  function login() {
+    window.location.href = buildLoginUrl();
+  }
+
+  return (
+    <AuthContext.Provider
+      value={{ loading, isAuthenticated, idToken, login, logout }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
 }
