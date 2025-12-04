@@ -2,6 +2,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from pii_removal import _scrub_text_quick, age_bucket_hipaa
+
 import torch
 
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  
@@ -19,12 +21,80 @@ class IntakePayload(BaseModel):
   patientId: str
   answers: list[dict] = []
   transcript: str = ""
+  age: int | None = None
+  gender: str | None = None
+
+def keyword_fallback(payload: IntakePayload):
+    """
+    Very simple backup classifier if the model output is empty or unparsable.
+    Mirrors the old keyword logic: red > orange > yellow.
+    """
+    text = []
+    for a in payload.answers:
+        text.append(f"{a.get('text','')}: {a.get('answer','')}")
+    if payload.transcript:
+        text.append(payload.transcript)
+    full = "\n".join(text).lower()
+
+    def has(word: str) -> bool:
+        return word in full
+
+    # High-risk
+    if (
+        has("chest pain")
+        or has("shortness of breath")
+        or has("short of breath")
+        or has("unconscious")
+        or has("severe bleeding")
+        or has("can't breathe")
+        or has("cannot breathe")
+    ):
+        return (
+            "red",
+            "Fallback: high-risk keywords detected (e.g., chest pain, shortness of breath, severe bleeding).",
+        )
+
+    # Moderate-risk
+    if (
+        has("worsening")
+        or has("getting worse")
+        or has("fever")
+        or has("high fever")
+        or has("moderate pain")
+        or has("can't keep fluids")
+        or has("cant keep fluids")
+    ):
+        return (
+            "orange",
+            "Fallback: moderate-risk keywords detected (worsening symptoms, fever, moderate pain).",
+        )
+
+    # Default
+    return (
+        "yellow",
+        "Fallback: no high-risk keywords detected; defaulting to routine.",
+    )
+
 
 def build_prompt(payload: IntakePayload) -> str:
-    answers_text = "\n".join(
-        f"- {a.get('text', '')}: {a.get('answer', '')}"
-        for a in payload.answers
-    )
+    # scrub each answer text & answer body
+    cleaned_answers = []
+    for a in payload.answers:
+        q_text = _scrub_text_quick(a.get("text", ""))
+        a_text = _scrub_text_quick(a.get("answer", ""))
+        cleaned_answers.append(f"- {q_text}: {a_text}")
+
+    answers_text = "\n".join(cleaned_answers)
+
+    # scrub full transcript
+    cleaned_transcript = _scrub_text_quick(payload.transcript)
+
+    # optional: age bucket header if you start passing age
+    age_tag = ""
+    if payload.age is not None:
+        age_group = age_bucket_hipaa(payload.age)
+        if age_group:
+            age_tag = f"[AGE_GROUP={age_group}]\n"
 
     return f"""
 You are a triage assistant. Based on the patient intake information, assign a triage color and explain why.
@@ -37,16 +107,15 @@ Triage colors:
 Return a single JSON object with two keys: "color" and "rationale".
 The "color" MUST be exactly one of: "red", "orange", "yellow".
 
-Patient ID: {payload.patientId}
-
-Answers:
+{age_tag}Answers:
 {answers_text}
 
 Transcript:
-{payload.transcript}
+{cleaned_transcript}
 
 Respond with JSON only.
 """.strip()
+
 
 
 import torch
@@ -88,21 +157,30 @@ import json
 import re
 
 def extract_json_color_and_rationale(model_output: str):
+   
     if not model_output or not model_output.strip():
         return None, None
 
-    # Try to isolate a JSON object
-    match = re.search(r'\{.*\}', model_output, flags=re.DOTALL)
-    snippet = match.group(0) if match else model_output
+    text = model_output.strip()
 
-    try:
-        data = json.loads(snippet)
-        color = str(data.get("color", "")).lower()
-        rationale = str(data.get("rationale", "")).strip()
-        return color or None, rationale or None
-    except Exception:
-        # Parsing failed
-        return None, None
+    # Try to isolate a JSON object first: { ... }
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    snippet = match.group(0).strip() if match else text
+
+    for attempt in range(2):
+        try:
+            data = json.loads(snippet)
+            color = str(data.get("color", "")).lower()
+            rationale = str(data.get("rationale", "")).strip()
+            return color or None, rationale or None
+        except Exception:
+            if attempt == 0:
+                # First failure: strip some obvious junk off the end and retry
+                snippet = snippet.rstrip("}; \n\r\t")
+            else:
+                # Second failure: give up
+                return None, None
+
 
 
 @app.post("/triage")

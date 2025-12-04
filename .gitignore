@@ -17,12 +17,13 @@ llama32_ent_triage_cls_lora_merged.tar.gz
 llama32_ent_triage_cls_lora_metrics_per_epoch.csv
 llama32_ent_triage_cls_lora_predictions_tau0_6.csv
 .venv
+.vs
 # production
 /build
 
 # misc
 .DS_Store
-.env.local
+
 .env.development.local
 .env.test.local
 .env.production.local
