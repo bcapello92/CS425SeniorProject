@@ -50,18 +50,28 @@ export default function ProviderTriage() {
 
   async function setFlag(riskId, key, value) {
     try {
-      await triageClient.setFlag(riskId, key, value);
-      setDetail(prev => {
-        const d = prev[riskId]?.data || {};
-        const next = {
-          ...(prev[riskId] || {}),
-          data: { ...d, flags: { ...(d.flags || {}), [key]: value } },
-        };
-        return { ...prev, [riskId]: next };
-      });
-    } catch (e) {
-      alert(`Failed to update flag: ${e?.message || e}`);
+    await triageClient.setFlag(riskId, key, value);
+
+    // Update local detail state
+    const current = detail[riskId]?.data || {};
+    const newFlags = { ...(current.flags || {}), [key]: value };
+
+    setDetail(prev => {
+      const d = prev[riskId]?.data || {};
+      const next = {
+        ...(prev[riskId] || {}),
+        data: { ...d, flags: newFlags },
+      };
+      return { ...prev, [riskId]: next };
+    });
+
+    // If BOTH contacted & scheduled are true, refresh the board so the case disappears
+    if (newFlags.contacted && newFlags.scheduled) {
+      loadBoard();
     }
+  } catch (e) {
+    alert(`Failed to update flag: ${e?.message || e}`);
+  }
   }
 
   // item = board card, currentColor = its current triage color, newColor = target color

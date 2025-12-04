@@ -253,6 +253,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
         sinceIso
       )}`,
     });
+
     const entries = (bundle.entry || [])
       .map((e) => e.resource)
       .filter((r) => r?.resourceType === "Observation");
@@ -267,6 +268,25 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
       const color = m?.[2]?.toLowerCase();
       if (!color) continue;
+
+      // ---- NEW: read triage-flags extension ----
+      let flags = {};
+      const flagsExt = (o.extension || []).find(
+        (e) => e.url === "http://example.org/triage-flags"
+      );
+      if (flagsExt?.valueString) {
+        try {
+          flags = JSON.parse(flagsExt.valueString);
+        } catch {
+          flags = {};
+        }
+      }
+
+      // If both contacted & scheduled are true, SKIP this case entirely
+      if (flags.contacted && flags.scheduled) {
+        continue;
+      }
+      // -----------------------------------------
 
       const pid = o.subject?.reference?.replace(/^Patient\//, "") || "unknown";
       const name = o.subject?.display || `Patient ${pid}`;
@@ -294,6 +314,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
+
 
 // ---------------------------------------------------------
 // PATIENT INTAKE -> MODEL -> HEALTHLAKE (UNAUTH / PUBLIC)
