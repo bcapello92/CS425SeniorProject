@@ -21,7 +21,7 @@ model = AutoModelForCausalLM.from_pretrained(
 
 
 class IntakePayload(BaseModel):
-    patientId: str
+    
     answers: list[dict] = []
     transcript: str = ""
     age: int | None = None
@@ -168,22 +168,23 @@ def extract_json_color_and_rationale(model_output: str):
 
     # Try to isolate a JSON object first: { ... }
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    snippet = match.group(0).strip() if match else text
+    if not match:
+        return None, None
 
-    for attempt in range(2):
-        try:
-            data = json.loads(snippet)
-            color = str(data.get("color", "")).lower()
-            rationale = str(data.get("rationale", "")).strip()
-            return color or None, rationale or None
-        except Exception:
-            if attempt == 0:
-                # First failure: strip some obvious junk off the end and retry
-                snippet = snippet.rstrip("}; \n\r\t")
-            else:
-                # Second failure: give up
-                return None, None
+    snippet = match.group(0)
 
+    # Keep only up to the last closing brace
+    last_brace = snippet.rfind("}")
+    if last_brace != -1:
+        snippet = snippet[: last_brace + 1]
+
+    try:
+        data = json.loads(snippet)
+        color = str(data.get("color", "")).lower()
+        rationale = str(data.get("rationale", "")).strip()
+        return color or None, rationale or None
+    except Exception:
+        return None, None
 
 @app.post("/triage")
 def triage(payload: IntakePayload):
@@ -196,7 +197,7 @@ def triage(payload: IntakePayload):
     scrubbed_snippet = scrub_triage_transcript(raw_snippet)
 
     print("\n=== TRIAGE REQUEST ===")
-    print("Patient:", payload.patientId)  # assuming this is an internal ID, not a name
+   
     print("Transcript snippet:", scrubbed_snippet)
     print("RAW MODEL OUTPUT:", repr(raw_output))
     print("PARSED:", {"color": color, "rationale": rationale})
