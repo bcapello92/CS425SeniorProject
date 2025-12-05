@@ -2,9 +2,11 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from pii_removal import _scrub_text_quick, age_bucket_hipaa
+from deidentify_triage import _scrub_text_quick, age_bucket_hipaa, scrub_triage_transcript
 
 import torch
+import json
+import re
 
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  # update to your path
 
@@ -17,12 +19,14 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto" if torch.cuda.is_available() else None,
 )
 
+
 class IntakePayload(BaseModel):
-  patientId: str
-  answers: list[dict] = []
-  transcript: str = ""
-  age: int | None = None
-  gender: str | None = None
+    patientId: str
+    answers: list[dict] = []
+    transcript: str = ""
+    age: int | None = None
+    gender: str | None = None
+
 
 def keyword_fallback(payload: IntakePayload):
     """
@@ -86,8 +90,8 @@ def build_prompt(payload: IntakePayload) -> str:
 
     answers_text = "\n".join(cleaned_answers)
 
-    # scrub full transcript
-    cleaned_transcript = _scrub_text_quick(payload.transcript)
+    # scrub full transcript with stronger de-identification
+    cleaned_transcript = scrub_triage_transcript(payload.transcript)
 
     # optional: age bucket header if you start passing age
     age_tag = ""
@@ -117,9 +121,6 @@ Respond with JSON only.
 """.strip()
 
 
-
-import torch
-
 def run_model(prompt: str) -> str:
     # Tokenize on CPU first
     enc = tokenizer(prompt, return_tensors="pt")
@@ -142,7 +143,14 @@ def run_model(prompt: str) -> str:
     gen_ids = outputs[0][input_len:]
 
     # Debug: see what lengths we're getting
-    print("DEBUG: input_len:", input_len, "total_len:", outputs[0].shape[-1], "gen_len:", gen_ids.shape[-1])
+    print(
+        "DEBUG: input_len:",
+        input_len,
+        "total_len:",
+        outputs[0].shape[-1],
+        "gen_len:",
+        gen_ids.shape[-1],
+    )
 
     if gen_ids.numel() == 0:
         # Nothing new generated
@@ -152,12 +160,7 @@ def run_model(prompt: str) -> str:
     return text.strip()
 
 
-
-import json
-import re
-
 def extract_json_color_and_rationale(model_output: str):
-   
     if not model_output or not model_output.strip():
         return None, None
 
@@ -182,16 +185,19 @@ def extract_json_color_and_rationale(model_output: str):
                 return None, None
 
 
-
 @app.post("/triage")
 def triage(payload: IntakePayload):
     prompt = build_prompt(payload)
     raw_output = run_model(prompt)
     color, rationale = extract_json_color_and_rationale(raw_output)
 
+    # Scrub transcript snippet before logging to avoid leaking names/PII in logs
+    raw_snippet = (payload.transcript or "").replace("\n", " ")[:200]
+    scrubbed_snippet = scrub_triage_transcript(raw_snippet)
+
     print("\n=== TRIAGE REQUEST ===")
-    print("Patient:", payload.patientId)
-    print("Transcript snippet:", (payload.transcript or "").replace("\n", " ")[:200])
+    print("Patient:", payload.patientId)  # assuming this is an internal ID, not a name
+    print("Transcript snippet:", scrubbed_snippet)
     print("RAW MODEL OUTPUT:", repr(raw_output))
     print("PARSED:", {"color": color, "rationale": rationale})
     print("======================\n")

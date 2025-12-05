@@ -269,7 +269,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       const color = m?.[2]?.toLowerCase();
       if (!color) continue;
 
-      // ---- NEW: read triage-flags extension ----
+      //read triage-flags extension ----
       let flags = {};
       const flagsExt = (o.extension || []).find(
         (e) => e.url === "http://example.org/triage-flags"
