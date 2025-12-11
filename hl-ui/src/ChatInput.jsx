@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./App.css";
-
+/*Wiem code start*/
 const ChatInput = ({ onSend }) => {
   const [input, setInput] = useState("");
 
@@ -32,3 +32,4 @@ const ChatInput = ({ onSend }) => {
 };
 
 export default ChatInput;
+/*Wiem Code end*/

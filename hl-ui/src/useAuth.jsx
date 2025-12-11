@@ -14,7 +14,7 @@ import {
 } from "./auth.jsx";
 
 const AuthContext = createContext(null);
-
+/*Brendan code*/
 export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -108,7 +108,7 @@ export function AuthProvider({ children }) {
           }
         }
 
-        // 2) If we didn't just get a fresh token, check localStorage
+        //If we didn't just get a fresh token, check localStorage
         if (!token) {
           token = localStorage.getItem("id_token");
         }
@@ -137,7 +137,7 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // ----- Login (code + PKCE) -----
+  //generic logout function
   function login() {
     buildLoginUrl().then((url) => {
       console.log("[Auth] redirecting to:", url);
@@ -145,7 +145,7 @@ export function AuthProvider({ children }) {
     });
   }
 
-  // ----- Logout -----
+  // generic login 
   function logout() {
     localStorage.removeItem("id_token");
     localStorage.removeItem("access_token");

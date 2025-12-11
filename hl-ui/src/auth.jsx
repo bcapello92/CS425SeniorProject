@@ -1,5 +1,5 @@
 ﻿// hl-ui/src/auth.jsx
-
+/*AWS pprebuild code*/
 // ----- Cognito config -----
 export const COGNITO_DOMAIN =
   import.meta.env.VITE_COGNITO_DOMAIN ||
@@ -11,7 +11,7 @@ export const COGNITO_CLIENT_ID =
 export const COGNITO_REDIRECT_URI =
   import.meta.env.VITE_COGNITO_REDIRECT_URI ||
   "http://localhost:5173/staff/callback";
-
+  //built for locol host
 export const COGNITO_LOGOUT_URI =
   import.meta.env.VITE_COGNITO_LOGOUT_URI || "http://localhost:5173/";
 
@@ -75,3 +75,4 @@ export function getIdToken() {
     return null;
   }
 }
+/*AWS prebuilt code*/

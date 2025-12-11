@@ -1,6 +1,4 @@
-﻿// server.js – HealthLake proxy + model integration + Cognito-protected provider APIs
-
-import "dotenv/config";
+﻿import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -11,9 +9,7 @@ import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 
-// ---------------------------------------------------------
-// MODEL SERVICE (classifier)
-// ---------------------------------------------------------
+//triage model call
 const MODEL_URL = process.env.MODEL_URL || "http://localhost:8001";
 
 async function callModelTriage({ patientId, answers, transcript }) {
@@ -48,7 +44,7 @@ async function callModelTriage({ patientId, answers, transcript }) {
 }
 
 // ---------------------------------------------------------
-// COGNITO JWT AUTH (for provider routes)
+// COGNITO JWT AUTH (for provider routes) aws calls not original code
 // ---------------------------------------------------------
 const COGNITO_REGION =
   process.env.COGNITO_REGION || process.env.AWS_REGION || "us-east-1";
@@ -94,6 +90,7 @@ function verifyToken(token) {
     );
   });
 }
+//AWS ccode end
 
 // Express middleware to require Cognito login
 async function requireAuth(req, res, next) {
@@ -106,14 +103,14 @@ async function requireAuth(req, res, next) {
     }
 
     const decoded = await verifyToken(token);
-    req.user = decoded; // optional: make user claims available
+    req.user = decoded;
     next();
   } catch (e) {
     console.error("[AUTH ERROR]", e.message || e);
     return res.status(401).json({ error: "Invalid or missing token" });
   }
 }
-
+/*AWS healthlake code start*/
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
 // ---------------------------------------------------------
@@ -187,9 +184,7 @@ async function signedFetch({ method = "GET", path = "", query = "", body }) {
   return data;
 }
 
-// ---------------------------------------------------------
-// BASIC DIAG/UTILITY ROUTES
-// ---------------------------------------------------------
+/
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
@@ -207,9 +202,7 @@ app.get("/diag/hl-ping", async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------
-// PATIENT-FACING FHIR HELPERS (OPTIONAL)
-// ---------------------------------------------------------
+
 app.get("/api/patients", async (req, res) => {
   try {
     const count = Math.min(100, Math.max(1, Number(req.query.count || 20)));
@@ -238,11 +231,13 @@ app.get("/api/observations", async (req, res) => {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
+/* AWS healthlake connection code end*/
+
 
 // ---------------------------------------------------------
-// PROVIDER TRIAGE BOARD (PROTECTED)
+// PROVIDER TRIAGE BOARD (PROTECTED) Brendan code
 // ---------------------------------------------------------
-// Fetch recent Observations, group by triage color from "Triage: red|orange|yellow"
+// Fetch recent Observations, group by triage color from "Triage: red|orange|green"
 app.get("/api/triage-cases", requireAuth, async (req, res) => {
   try {
     const hours = Math.max(1, Math.min(168, Number(req.query.sinceHours || 24)));
@@ -286,7 +281,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       if (flags.contacted && flags.scheduled) {
         continue;
       }
-      // -----------------------------------------
+      
 
       const pid = o.subject?.reference?.replace(/^Patient\//, "") || "unknown";
       const name = o.subject?.display || `Patient ${pid}`;
@@ -317,7 +312,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
 
 
 // ---------------------------------------------------------
-// PATIENT INTAKE -> MODEL -> HEALTHLAKE (UNAUTH / PUBLIC)
+// PATIENT INTAKE -> MODEL -> HEALTHLAKE (UNAUTH / PUBLIC) plug and play code for the most part
 // ---------------------------------------------------------
 app.post("/api/intake", async (req, res) => {
   try {
@@ -561,9 +556,9 @@ app.patch(
     }
   }
 );
-
+/*Need to fix later on. Dont use alert can crash system*/
 // ---------------------------------------------------------
-// OVERRIDE COLOR – PROTECTED
+// OVERRIDE COLOR – PROTECTED 
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/override",
