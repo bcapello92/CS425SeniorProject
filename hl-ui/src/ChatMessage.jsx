@@ -1,6 +1,6 @@
 import React from "react";
 import "./App.css";
-
+//wiem code
 const ChatMessage = ({ sender, text, isHTML = false }) => {
   return (
     <div className={sender === "user" ? "message-user" : "message-bot"}>

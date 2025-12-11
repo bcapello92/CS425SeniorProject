@@ -7,6 +7,8 @@ export default function ProviderTriage() {
     const [hours, setHours] = useState(168);
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState(null);
+    /*Brendan code Start*/
+
 
     // open/close map by riskId
     const [open, setOpen] = useState({});
@@ -132,7 +134,7 @@ export default function ProviderTriage() {
                 };
             });
 
-            // 3) (Optional) refresh from server to stay in sync with HL
+            
             loadBoard();
         } catch (e) {
             alert(`Failed to set override: ${e?.message || e}`);
@@ -328,6 +330,7 @@ export default function ProviderTriage() {
         </div>
     );
 }
+/*Brendan Code end*/
 
 // UPDATED COLORS:
 // - red: keep existing

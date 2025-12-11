@@ -3,7 +3,7 @@ import ChatMessage from "./ChatMessage.jsx";
 import ChatInput from "./ChatInput.jsx";
 import { triageClient } from "./triageClient";
 import "./App.css"; 
-
+/*Wiem original code start*/
 const questions = [
   "What main symptom are you experiencing?",
   "How long have you had this symptom?",
@@ -266,7 +266,7 @@ export default function PatientChatIntake() {
   );
 }
 
-// ---------- simple inline styles to match your app ----------
+/*Wiem code end*/
 const card = {
   margin: "16px auto",
   padding: 16,
