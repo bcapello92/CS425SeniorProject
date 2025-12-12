@@ -2,13 +2,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from deidentify_triage import _scrub_text_quick, age_bucket_hipaa, scrub_triage_transcript
+from deidentify_triage import _scrub_text_quick, age_bucket_hipaa, scrub_triage_transcript #not in use yet 
 
 import torch
 import json
 import re
 
-MODEL_PATH = "llama32_ent_triage_cls_lora_merged"  
+MODEL_PATH = "llama32_ent_triage_cls_lora_merged"   #wiem model 
 
 app = FastAPI()
 
@@ -27,12 +27,9 @@ class IntakePayload(BaseModel):
     age: int | None = None
     gender: str | None = None
 
-
+    #brendan code
 def keyword_fallback(payload: IntakePayload):
-    """
-    Very simple backup classifier if the model output is empty or unparsable.
-    Mirrors the old keyword logic: red > orange > yellow.
-    """
+    #fall back if model fails looks for keywords
     text = []
     for a in payload.answers:
         text.append(f"{a.get('text','')}: {a.get('answer','')}")
@@ -79,7 +76,7 @@ def keyword_fallback(payload: IntakePayload):
         "Fallback: no high-risk keywords detected; defaulting to routine.",
     )
 
-
+#wiem code
 def build_prompt(payload: IntakePayload) -> str:
     # scrub each answer text & answer body
     cleaned_answers = []
@@ -217,7 +214,7 @@ def triage(payload: IntakePayload):
         print("USING FALLBACK:", {"color": color, "rationale": rationale})
 
     # Normalize color
-    if color not in ("red", "orange", "yellow"):
-        color = "yellow"
+    if color not in ("red", "orange", "green"):
+        color = "green"
 
     return {"color": color, "rationale": rationale}
