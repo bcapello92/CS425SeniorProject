@@ -184,7 +184,7 @@ async function signedFetch({ method = "GET", path = "", query = "", body }) {
   return data;
 }
 
-/
+
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
