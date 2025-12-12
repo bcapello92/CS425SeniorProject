@@ -164,28 +164,36 @@ def extract_json_color_and_rationale(model_output: str):
     if not model_output or not model_output.strip():
         return None, None
 
-    text = model_output.strip()
+    s = model_output.strip()
 
-    # Try to isolate a JSON object first: { ... }
-    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    if not match:
+    # Find the first JSON object by scanning and balancing braces
+    start = s.find("{")
+    if start == -1:
         return None, None
 
-    snippet = match.group(0)
+    depth = 0
+    end = None
+    for i in range(start, len(s)):
+        if s[i] == "{":
+            depth += 1
+        elif s[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
 
-    # Keep only up to the last closing brace
-    last_brace = snippet.rfind("}")
-    if last_brace != -1:
-        snippet = snippet[: last_brace + 1]
+    if end is None:
+        return None, None
+
+    snippet = s[start:end]  # this will stop at the first balanced JSON object
 
     try:
         data = json.loads(snippet)
-        color = str(data.get("color", "")).lower()
-        rationale = str(data.get("rationale", "")).strip()
-        return color or None, rationale or None
+        color = str(data.get("color", "")).strip().lower() or None
+        rationale = str(data.get("rationale", "")).strip() or None
+        return color, rationale
     except Exception:
         return None, None
-
 @app.post("/triage")
 def triage(payload: IntakePayload):
     prompt = build_prompt(payload)
