@@ -49,14 +49,11 @@ class TriageClient {
     );
   }
 
-  async setFlag(riskId, key, value) {
-    return this._request(
-      `/api/triage-cases/${encodeURIComponent(riskId)}/flags`,
-      {
-        method: 'PATCH',
-        body: { [key]: value },
-      }
-    );
+    async setFlag(riskId, _keyIgnored, updates) {
+      return this._request(`/api/triage-cases/${encodeURIComponent(riskId)}/flags`, {
+          method: "PATCH",
+          body: updates,
+      });
   }
   async setOverride(riskId, color, reason) {
   return this._request(
