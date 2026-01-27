@@ -13,7 +13,8 @@ import jwksClient from "jwks-rsa";
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:8002";
 const app = express();
-app.use(cors());
+
+app.use(cors({ origin: ["http://localhost:5173"] }));
 app.use(express.json());
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
@@ -65,21 +66,7 @@ async function callModelTriage({ patientId, answers, transcript }) {
     throw err;
   }
 }
-app.post("/api/patient-chat", async (req, res) => {
-    try {
-        const resp = await fetch(`${CHAT_SERVICE_URL}/chat`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(req.body),
-        });
 
-        const data = await resp.json();
-        res.json(data);
-    } catch (e) {
-        console.error("[CHAT ERROR]", e);
-        res.status(500).json({ error: "Chat service unavailable" });
-    }
-});
 
 app.post("/api/patient-chat", async (req, res) => {
     try {
@@ -189,8 +176,6 @@ async function requireAuth(req, res, next) {
 // HEALTHLAKE SIGNED CLIENT
 // ---------------------------------------------------------
 
-app.use(cors({ origin: ["http://localhost:5173"] }));
-app.use(express.json());
 
 const REGION = (process.env.REGION || process.env.AWS_REGION || "").trim();
 const DATASTORE_ID = (process.env.DATASTORE_ID || "").trim();
@@ -742,10 +727,3 @@ app.patch(
   }
 );
 
-// ---------------------------------------------------------
-// START SERVER
-// ---------------------------------------------------------
-
-app.listen(PORT, () =>
-  console.log(`HealthLake proxy running on http://localhost:${PORT}`)
-);

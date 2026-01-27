@@ -91,12 +91,8 @@ export default function ProviderTriage() {
         try {
             await triageClient.setFlag(riskId, "bulk", updates);
 
-            // compute next flags
-            const current = detail[riskId]?.data || {};
-            const newFlags = { ...(current.flags || {}), [key]: value };
-
             // Update local detail state
-            setDetail(prev => {
+            setDetail((prev) => {
                 const d = prev[riskId]?.data || {};
                 const nextFlags = { ...(d.flags || {}), ...(updates || {}) };
                 return {
@@ -113,7 +109,7 @@ export default function ProviderTriage() {
             const merged = { ...currentFlags, ...updates };
             if (merged.contacted && merged.scheduled) {
                 removeFromBoard(riskId);
-                setOpen(prev => ({ ...prev, [riskId]: false }));
+                setOpen((prev) => ({ ...prev, [riskId]: false }));
             }
         } catch (e) {
             alert(`Failed to update flag: ${e?.message || e}`);
@@ -784,3 +780,4 @@ function btn(kind) {
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
 }
+``
