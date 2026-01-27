@@ -1,20 +1,29 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 import ChatMessage from "./ChatMessage.jsx";
 import ChatInput from "./ChatInput.jsx";
-import { triageClient } from "./triageClient";
+import { triageClient, sendChat } from "./triageClient";
 import "./App.css"; 
 /*Wiem original code start*/
-const questions = [
-  "What main symptom are you experiencing?",
-  "How long have you had this symptom?",
-  "Would you describe your pain as mild, moderate, or severe?",
-  "Is your symptom getting better or worse?",
-  "What makes your symptoms worse?",
-  "What makes your symptoms better?",
-  "Do you have any underlying conditions (like diabetes or immune issues)?",
-  "Are there other symptoms occurring at the same time?",
-  "Do you have any test results or findings (like swelling or neck mass)?"
-];
+const BOT_GREETING =
+  "👋 Hi! I’m your ENT assistant. Tell me what’s going on and I’ll ask a few follow-ups.";
+
+function uiToApiMessages(uiMessages) {
+  // Convert your UI message format to the FastAPI format: {role, content}
+  return uiMessages
+    .filter((m) => m && typeof m.text === "string" && m.text.trim() !== "")
+    .map((m) => ({
+      role: m.sender === "user" ? "user" : "assistant",
+      content: m.text,
+    }));
+}
+
+
+function buildTranscript(uiMessages) {
+  return uiMessages
+    .filter((m) => m && typeof m.text === "string" && m.text.trim() !== "")
+    .map((m) => `${m.sender === "user" ? "Patient" : "Assistant"}: ${m.text}`)
+    .join("\n");
+}
 
 export default function PatientChatIntake() {
   // ---------- patient + consent ----------
@@ -24,15 +33,8 @@ export default function PatientChatIntake() {
 
   // ---------- chat state ----------
   const [messages, setMessages] = useState([
-    {
-      sender: "bot",
-      text:
-        "👋 Hello! I’m your ENT assistant. Let’s go through a few quick questions about your symptoms."
-    },
-    { sender: "bot", text: questions[0] }
+    { sender: "bot", text: BOT_GREETING },
   ]);
-  const [answers, setAnswers] = useState({});
-  const [currentQuestion, setCurrentQuestion] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef(null);
 
@@ -41,159 +43,127 @@ export default function PatientChatIntake() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  // auto scroll
+  const hasStartedChat = patientId !== null;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
-
-  const hasStartedChat = patientId !== null;
 
   function resetAll() {
     setEntryId("");
     setPatientId(null);
     setConsented(false);
-    setMessages([
-      {
-        sender: "bot",
-        text:
-          "👋 Hello! I’m your ENT assistant. Let’s go through a few quick questions about your symptoms."
-      },
-      { sender: "bot", text: questions[0] }
-    ]);
-    setAnswers({});
-    setCurrentQuestion(0);
+    setMessages([{ sender: "bot", text: BOT_GREETING }]);
     setIsTyping(false);
     setSubmitting(false);
     setResult(null);
     setError(null);
   }
 
-  // ---------- handle chat answers ----------
+  // ---------- Chat send ----------
   const handleUserMessage = async (userInput) => {
-    const trimmed = userInput.trim();
-    if (!trimmed || !patientId) return;
+  const trimmed = userInput.trim();
+  if (!trimmed || !patientId) return;
 
-    const newMessages = [...messages, { sender: "user", text: trimmed }];
-    setMessages(newMessages);
+  const newMessages = [...messages, { sender: "user", text: trimmed }];
+  setMessages(newMessages);
 
-    // store answer by question text
-    const qText = questions[currentQuestion];
-    const newAnswers = { ...answers, [qText]: trimmed };
-    setAnswers(newAnswers);
+  setIsTyping(true);
+  setError(null);
+  try {
+    const apiMsgs = uiToApiMessages(newMessages);
+    const reply = await sendChat(apiMsgs);
 
-    // If there is a next question, ask it
-    if (currentQuestion + 1 < questions.length) {
-      const nextQuestion = questions[currentQuestion + 1];
+    setMessages((prev) => [...prev, { sender: "bot", text: reply }]);
+  } catch (e) {
+    setMessages((prev) => [
+      ...prev,
+      { sender: "bot", text: "❌ Chat error: " + (e?.message || e) + ". Please try again." },
+    ]);
+  } finally {
+    setIsTyping(false);
+  }
+};
 
-      setIsTyping(true);
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...newMessages,
-          { sender: "bot", text: nextQuestion }
-        ]);
-        setCurrentQuestion((prev) => prev + 1);
-        setIsTyping(false);
-      }, 900);
-      return;
-    }
+  // ---------- Send chat transcript for triage ----------
+  async function sendForTriage() {
+    if (!patientId) return;
+    if (submitting) return;
 
-    // ---------- all questions answered: send to triage pipeline ----------
-    setIsTyping(true);
-    setTimeout(async () => {
-      const thinkingMessages = [
-        ...newMessages,
+    setSubmitting(true);
+    setError(null);
+
+    const transcript = buildTranscript(messages);
+
+    // answers are optional; you can keep empty or derive later
+    const answers = [];
+
+    // add a visible status message
+    setMessages((prev) => [
+      ...prev,
+      { sender: "bot", text: "✅ Sending this conversation for triage..." },
+    ]);
+
+    try {
+      const data = await triageClient.submitIntake({
+        patientId,
+        answers,
+        transcript,
+      });
+
+      setResult(data);
+
+      const triageColor = String(data.color || "").toLowerCase();
+      let triageLabel = "routine";
+      let severityClass = "non-urgent";
+      let emoji = "✅";
+
+      if (triageColor === "red") {
+        triageLabel = "severe";
+        severityClass = "emergency";
+        emoji = "🚨";
+      } else if (triageColor === "orange") {
+        triageLabel = "urgent";
+        severityClass = "semi-urgent";
+        emoji = "⚠️";
+      }
+
+      const botReply = `
+        <div class="severity-container">
+          <button class="severity-btn ${severityClass}">
+            ${emoji} ${triageLabel.charAt(0).toUpperCase() + triageLabel.slice(1)}
+          </button>
+          <p>Based on your conversation, your case is classified as <strong>${triageLabel}</strong>.</p>
+          <p><strong>Reasoning:</strong> ${data.rationale || "No rationale provided."}</p>
+        </div>
+      `;
+
+      setMessages((prev) => [...prev, { sender: "bot", text: botReply, isHTML: true }]);
+    } catch (err) {
+      setError(err?.message || "Failed to submit for triage.");
+      setMessages((prev) => [
+        ...prev,
         {
           sender: "bot",
-          text: "Thank you! I’m analyzing your responses and sending them for triage..."
-        }
-      ];
-      setMessages(thinkingMessages);
-      setIsTyping(false);
-      setSubmitting(true);
-      setError(null);
+          text: "❌ Sorry, I couldn’t submit for triage. Please try again.",
+        },
+      ]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
-      try {
-        // Build answers array for /api/intake
-        const answersArray = questions.map((q) => ({
-          linkId: q,
-          text: q,
-          answer: newAnswers[q] || ""
-        }));
+  const userMessageCount = messages.filter((m) => m.sender === "user").length;
+  const canSendForTriage = hasStartedChat && !result && userMessageCount >= 2 && !submitting;
 
-        // Build transcript
-        const transcriptLines = questions.map(
-          (q) => `Q: ${q}\nA: ${newAnswers[q] || ""}`
-        );
-        const transcript = transcriptLines.join("\n");
-
-        const data = await triageClient.submitIntake({
-          patientId,
-          answers: answersArray,
-          transcript
-        });
-
-        // data: { id, color, rationale, answers }
-        setResult(data);
-
-        const triageColor = String(data.color || "").toLowerCase();
-        let triageLabel = "routine";
-        let severityClass = "non-urgent";
-        let emoji = "✅";
-
-        if (triageColor === "red") {
-          triageLabel = "severe";
-          severityClass = "emergency";
-          emoji = "🚨";
-        } else if (triageColor === "orange") {
-          triageLabel = "urgent";
-          severityClass = "semi-urgent";
-          emoji = "⚠️";
-        } else {
-          triageLabel = "routine";
-          severityClass = "non-urgent";
-          emoji = "✅";
-        }
-
-        const botReply = `
-          <div class="severity-container">
-            <button class="severity-btn ${severityClass}">${emoji} ${triageLabel.charAt(0).toUpperCase() +
-          triageLabel.slice(1)
-        }</button>
-            <p>Based on your responses, your case is classified as <strong>${triageLabel}</strong>.</p>
-            <p><strong>Reasoning:</strong> ${data.rationale || "No rationale provided."}</p>
-          </div>
-        `;
-
-        setMessages([
-          ...thinkingMessages,
-          { sender: "bot", text: botReply, isHTML: true }
-        ]);
-      } catch (err) {
-        console.error("Triage error:", err);
-        setError(err.message || "Failed to submit for triage.");
-        setMessages([
-          ...newMessages,
-          {
-            sender: "bot",
-            text:
-              "❌ Sorry, I couldn’t submit your responses for triage. Please try again."
-          }
-        ]);
-      } finally {
-        setSubmitting(false);
-      }
-    }, 1000);
-  };
-
-  // ---------- UI ----------
-  return (
+    return (
     <div className="chatbot-wrapper">
       <header className="chatbot-header">
         <img src="/logo.png" alt="ENT Logo" className="logo" />
         <h1>ENT Patient Support Chatbot</h1>
       </header>
 
-      {/* Start screen for patient ID + consent */}
+      {/* Start screen */}
       {!hasStartedChat && !result && (
         <div style={card}>
           <div style={{ marginBottom: 8 }}>
@@ -246,15 +216,35 @@ export default function PatientChatIntake() {
             <div ref={bottomRef}></div>
           </div>
 
-          {error && (
-            <div style={{ color: "crimson", marginTop: 8 }}>Error: {error}</div>
-          )}
+          {error && <div style={{ color: "crimson", marginTop: 8 }}>Error: {error}</div>}
 
-          <ChatInput onSend={handleUserMessage} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div style={{ flex: 1 }}>
+              <ChatInput onSend={handleUserMessage} />
+            </div>
+
+            <button
+              onClick={sendForTriage}
+              disabled={!canSendForTriage}
+              style={{
+                ...buttonPrimary,
+                height: 44,
+                alignSelf: "flex-end",
+                opacity: canSendForTriage ? 1 : 0.5,
+              }}
+              title={
+                userMessageCount < 2
+                  ? "Have a short conversation first (at least 2 patient messages)."
+                  : ""
+              }
+            >
+              {submitting ? "Sending…" : "Send for Triage"}
+            </button>
+          </div>
         </>
       )}
 
-      {/* After triage result you can show a reset button */}
+      {/* After triage */}
       {result && (
         <div style={{ marginTop: 16 }}>
           <button onClick={resetAll} style={buttonSecondary}>
@@ -265,7 +255,6 @@ export default function PatientChatIntake() {
     </div>
   );
 }
-
 /*Wiem code end*/
 const card = {
   margin: "16px auto",

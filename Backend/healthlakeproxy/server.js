@@ -10,39 +10,83 @@ import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 
 //triage model call
-const MODEL_URL = process.env.MODEL_URL || "http://localhost:8001";
-
+const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
+const CHAT_SERVICE_URL=process.ev.CHAT_SERVICE_URL || "http://localhost:8002";
 async function callModelTriage({ patientId, answers, transcript }) {
-  const payload = { patientId, answers, transcript };
+  const payload = {
+    patientId,
+    answers,
+    transcript,
+    symptoms: transcript
+  };
 
-  const resp = await fetch(`${MODEL_URL}/triage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  console.log(`[DEBUG] CallModelTriage: Payload prepared. Sending to ${MODEL_URL}/triage...`);
 
-  const contentType = resp.headers.get("content-type") || "";
-  const data = contentType.includes("application/json")
-    ? await resp.json()
-    : { error: await resp.text() };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 min timeout for CPU inference
 
-  if (!resp.ok) {
-    const msg = typeof data === "string" ? data : JSON.stringify(data);
-    console.error("[MODEL ERROR]", resp.status, msg);
-    const err = new Error(`Model error ${resp.status}: ${msg}`);
-    err.status = resp.status;
+    const resp = await fetch(`${MODEL_URL}/triage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    console.log(`[DEBUG] CallModelTriage: Fetch completed. Status: ${resp.status}`);
+
+    const contentType = resp.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await resp.json()
+      : { error: await resp.text() };
+
+    if (!resp.ok) {
+      const msg = typeof data === "string" ? data : JSON.stringify(data);
+      console.error("[MODEL ERROR]", resp.status, msg);
+      const err = new Error(`Model error ${resp.status}: ${msg}`);
+      err.status = resp.status;
+      throw err;
+    }
+
+    let color = String(data.color || "").toLowerCase();
+    if (!["red", "orange", "yellow"].includes(color)) {
+      color = "yellow"; // fallback
+    }
+
+    const rationale = data.rationale || "Model did not provide rationale.";
+    return { color, rationale };
+
+  } catch (err) {
+    console.error(`[DEBUG] CallModelTriage FAILED: ${err.message}`);
     throw err;
   }
-
-  let color = String(data.color || "").toLowerCase();
-  if (!["red", "orange", "yellow"].includes(color)) {
-    color = "yellow"; // fallback
-  }
-
-  const rationale = data.rationale || "Model did not provide rationale.";
-  return { color, rationale };
 }
+app.post("/api/patient-chat", async (req, res) => {
+  try {
+    const { messages } = req.body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages[] is required" });
+    }
 
+    const resp = await fetch(`${CHAT_SERVICE_URL}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages }),
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return res
+        .status(resp.status)
+        .json({ error: data?.detail || data?.error || "Chat service failed" });
+    }
+
+    res.json(data); // { reply }
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
 // ---------------------------------------------------------
 // COGNITO JWT AUTH (for provider routes) aws calls not original code
 // ---------------------------------------------------------
@@ -80,11 +124,19 @@ function verifyToken(token) {
       token,
       getKey,
       {
-        audience: COGNITO_CLIENT_ID,
         issuer: COGNITO_ISSUER,
       },
       (err, decoded) => {
         if (err) return reject(err);
+
+        // Validate access token claims
+        if (decoded.token_use !== "access") {
+          return reject(new Error("Invalid token_use: expected 'access'"));
+        }
+        if (decoded.client_id !== COGNITO_CLIENT_ID) {
+          return reject(new Error("Invalid client_id claim"));
+        }
+
         resolve(decoded);
       }
     );
@@ -118,8 +170,8 @@ const app = express();
 app.use(cors({ origin: ["http://localhost:5173"] }));
 app.use(express.json());
 
-const REGION = process.env.REGION || process.env.AWS_REGION;
-const DATASTORE_ID = process.env.DATASTORE_ID;
+const REGION = (process.env.REGION || process.env.AWS_REGION || "").trim();
+const DATASTORE_ID = (process.env.DATASTORE_ID || "").trim();
 if (!REGION || !DATASTORE_ID) {
   console.error("Missing REGION or DATASTORE_ID in env");
   process.exit(1);
@@ -127,7 +179,12 @@ if (!REGION || !DATASTORE_ID) {
 const BASE_HOST = `healthlake.${REGION}.amazonaws.com`;
 const BASE_URL = `https://${BASE_HOST}/datastore/${DATASTORE_ID}/r4`;
 
-const credentials = fromNodeProviderChain({ profile: process.env.AWS_PROFILE });
+const providerOptions = {};
+if (process.env.AWS_PROFILE) {
+  providerOptions.profile = process.env.AWS_PROFILE;
+}
+const credentials = fromNodeProviderChain(providerOptions);
+
 const signer = new SignatureV4({
   service: "healthlake",
   region: REGION,
@@ -135,22 +192,34 @@ const signer = new SignatureV4({
   credentials,
 });
 
+console.log("[INIT] HealthLake Proxy starting with:", {
+  REGION,
+  DATASTORE_ID,
+  HAS_ACCESS_KEY: !!process.env.AWS_ACCESS_KEY_ID,
+  HAS_PROFILE: !!process.env.AWS_PROFILE
+});
+
 async function signedFetch({ method = "GET", path = "", query = "", body }) {
-  const url = `${BASE_URL}${path}${query ? `?${query}` : ""}`;
+  const queryParams = query ? Object.fromEntries(new URLSearchParams(query)) : undefined;
 
   const req = new HttpRequest({
     method,
     protocol: "https:",
     hostname: BASE_HOST,
     path: `/datastore/${DATASTORE_ID}/r4${path}`,
-    query: query ? Object.fromEntries(new URLSearchParams(query)) : undefined,
-    headers: { host: BASE_HOST, "content-type": "application/fhir+json" },
+    query: queryParams,
+    headers: {
+      host: BASE_HOST,
+      "content-type": "application/fhir+json",
+      "accept": "application/fhir+json"
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
 
   const signed = await signer.sign(req);
 
-  const resp = await fetch(url, {
+  const fetchUrl = `${BASE_URL}${path}${query ? `?${query}` : ""}`;
+  const resp = await fetch(fetchUrl, {
     method,
     headers: signed.headers,
     body: req.body,
@@ -169,11 +238,17 @@ async function signedFetch({ method = "GET", path = "", query = "", body }) {
         "[HL WARN] Patient request failed",
         resp.status,
         method,
-        url,
+        fetchUrl,
         msg
       );
     } else {
-      console.error("[HL ERROR]", resp.status, method, url, msg);
+      console.error("[HL ERROR]", {
+        status: resp.status,
+        method,
+        url: fetchUrl,
+        response: msg,
+        authHeader: signed.headers["authorization"] ? "PRESENT" : "MISSING"
+      });
     }
 
     const err = new Error(`HealthLake error ${resp.status}: ${msg}`);
@@ -183,7 +258,6 @@ async function signedFetch({ method = "GET", path = "", query = "", body }) {
 
   return data;
 }
-
 
 app.get("/health", (req, res) => {
   res.json({
@@ -253,6 +327,8 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       .map((e) => e.resource)
       .filter((r) => r?.resourceType === "Observation");
 
+    console.log(`[BOARD] Found ${entries.length} observations since ${sinceIso}`);
+
     const groups = { red: [], orange: [], yellow: [] };
 
     for (const o of entries) {
@@ -262,7 +338,11 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
         .toLowerCase();
       const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
       const color = m?.[2]?.toLowerCase();
-      if (!color) continue;
+
+      if (!color) {
+        console.log(`[BOARD] Skipping obs ${o.id}: no triage color found in notes. Notes: "${text}"`);
+        continue;
+      }
 
       //read triage-flags extension ----
       let flags = {};
@@ -281,7 +361,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       if (flags.contacted && flags.scheduled) {
         continue;
       }
-      
+
 
       const pid = o.subject?.reference?.replace(/^Patient\//, "") || "unknown";
       const name = o.subject?.display || `Patient ${pid}`;
@@ -317,6 +397,8 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
 app.post("/api/intake", async (req, res) => {
   try {
     const { patientId, answers = [], transcript = "" } = req.body || {};
+    console.log(`[INTAKE] Received request for patientId: ${patientId}`);
+
     if (!patientId || typeof patientId !== "string") {
       return res.status(400).json({ error: "patientId is required" });
     }
@@ -380,6 +462,8 @@ app.post("/api/intake", async (req, res) => {
       path: "/Observation",
       body: obs,
     });
+
+    console.log(`[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}`);
 
     res.json({
       id: created?.id || null,

@@ -23,30 +23,11 @@ llama32_ent_triage_cls_lora_predictions_tau0_6.csv
 
 # misc
 .DS_Store
+
+.env.development.local
+.env.test.local
+.env.production.local
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Node / frontend
-node_modules/
-dist/
-.vite/
-.env
-.env.*
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.venv/
-venv/
-
-# IDEs / editors
-.vscode/
-.vs/
-.idea/
-
-# OS files
-.DS_Store
-Thumbs.db
