@@ -24,10 +24,8 @@ llama32_ent_triage_cls_lora_predictions_tau0_6.csv
 # misc
 .DS_Store
 
-.env
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
+
 
 npm-debug.log*
 yarn-debug.log*
