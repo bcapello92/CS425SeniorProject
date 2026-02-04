@@ -91,12 +91,8 @@ export default function ProviderTriage() {
         try {
             await triageClient.setFlag(riskId, "bulk", updates);
 
-            // compute next flags
-            const current = detail[riskId]?.data || {};
-            const newFlags = { ...(current.flags || {}), [key]: value };
-
             // Update local detail state
-            setDetail(prev => {
+            setDetail((prev) => {
                 const d = prev[riskId]?.data || {};
                 const nextFlags = { ...(d.flags || {}), ...(updates || {}) };
                 return {
@@ -113,7 +109,7 @@ export default function ProviderTriage() {
             const merged = { ...currentFlags, ...updates };
             if (merged.contacted && merged.scheduled) {
                 removeFromBoard(riskId);
-                setOpen(prev => ({ ...prev, [riskId]: false }));
+                setOpen((prev) => ({ ...prev, [riskId]: false }));
             }
         } catch (e) {
             alert(`Failed to update flag: ${e?.message || e}`);
@@ -371,290 +367,290 @@ export default function ProviderTriage() {
                                                                 </div>
                                                             )}
 
-                                                                    <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-                                                                        {/* CONTACTED */}
-                                                                        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={!!d.data?.flags?.contacted}
-                                                                                onChange={(e) => {
-                                                                                    const checked = e.target.checked;
+                                                            <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                                                                {/* CONTACTED */}
+                                                                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={!!d.data?.flags?.contacted}
+                                                                        onChange={(e) => {
+                                                                            const checked = e.target.checked;
 
-                                                                                    if (!checked) {
-                                                                                        // uncheck immediately clears contacted + optional metadata
-                                                                                        setFlag(item.riskId, {
-                                                                                            contacted: false,
-                                                                                            contactMethod: null,
-                                                                                            contactNote: null,
-                                                                                        });
-                                                                                        return;
-                                                                                    }
+                                                                            if (!checked) {
+                                                                                // uncheck immediately clears contacted + optional metadata
+                                                                                setFlag(item.riskId, {
+                                                                                    contacted: false,
+                                                                                    contactMethod: null,
+                                                                                    contactNote: null,
+                                                                                });
+                                                                                return;
+                                                                            }
 
-                                                                                    // open inline prompt instead of immediately saving
-                                                                                    setFlagUI((prev) => ({
-                                                                                        ...prev,
-                                                                                        [item.riskId]: {
-                                                                                            ...(prev[item.riskId] || {}),
-                                                                                            contact: { open: true, method: "phone", note: "", error: null, saving: false },
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            />
-                                                                            Contacted
-                                                                        </label>
+                                                                            // open inline prompt instead of immediately saving
+                                                                            setFlagUI((prev) => ({
+                                                                                ...prev,
+                                                                                [item.riskId]: {
+                                                                                    ...(prev[item.riskId] || {}),
+                                                                                    contact: { open: true, method: "phone", note: "", error: null, saving: false },
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                    />
+                                                                    Contacted
+                                                                </label>
 
-                                                                        {/* SCHEDULED */}
-                                                                        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={!!d.data?.flags?.scheduled}
-                                                                                onChange={(e) => {
-                                                                                    const checked = e.target.checked;
+                                                                {/* SCHEDULED */}
+                                                                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={!!d.data?.flags?.scheduled}
+                                                                        onChange={(e) => {
+                                                                            const checked = e.target.checked;
 
-                                                                                    if (!checked) {
-                                                                                        setFlag(item.riskId, {
-                                                                                            scheduled: false,
-                                                                                            appointmentAt: null,
-                                                                                        });
-                                                                                        return;
-                                                                                    }
+                                                                            if (!checked) {
+                                                                                setFlag(item.riskId, {
+                                                                                    scheduled: false,
+                                                                                    appointmentAt: null,
+                                                                                });
+                                                                                return;
+                                                                            }
 
-                                                                                    setFlagUI((prev) => ({
-                                                                                        ...prev,
-                                                                                        [item.riskId]: {
-                                                                                            ...(prev[item.riskId] || {}),
-                                                                                            scheduled: { open: true, at: "", error: null, saving: false },
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            />
-                                                                            Scheduled
-                                                                        </label>
+                                                                            setFlagUI((prev) => ({
+                                                                                ...prev,
+                                                                                [item.riskId]: {
+                                                                                    ...(prev[item.riskId] || {}),
+                                                                                    scheduled: { open: true, at: "", error: null, saving: false },
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                    />
+                                                                    Scheduled
+                                                                </label>
 
-                                                                        <span style={{ marginLeft: "auto" }}>
-                                                                            Override:
-                                                                            <select
-                                                                                value={currentColor}
-                                                                                onChange={(e) => openOverrideEditor(item, currentColor, e.target.value)}
-                                                                                style={{ marginLeft: 6 }}
-                                                                            >
-                                                                                <option value="red">Severe (Red)</option>
-                                                                                <option value="orange">Moderate (Orange)</option>
-                                                                                <option value="yellow">Routine (Yellow)</option>
-                                                                            </select>
-                                                                        </span>
+                                                                <span style={{ marginLeft: "auto" }}>
+                                                                    Override:
+                                                                    <select
+                                                                        value={currentColor}
+                                                                        onChange={(e) => openOverrideEditor(item, currentColor, e.target.value)}
+                                                                        style={{ marginLeft: 6 }}
+                                                                    >
+                                                                        <option value="red">Severe (Red)</option>
+                                                                        <option value="orange">Moderate (Orange)</option>
+                                                                        <option value="yellow">Routine (Yellow)</option>
+                                                                    </select>
+                                                                </span>
 
-                                                                        {/* CONTACT PROMPT */}
-                                                                        {flagUI[item.riskId]?.contact?.open && (
-                                                                            <div
-                                                                                style={{
-                                                                                    width: "100%",
-                                                                                    marginTop: 10,
-                                                                                    padding: 10,
-                                                                                    background: "#fff",
-                                                                                    borderRadius: 8,
-                                                                                    border: "1px solid #e5e7eb",
-                                                                                }}
-                                                                            >
-                                                                                <div style={{ fontWeight: 700, marginBottom: 6 }}>How did you contact the patient?</div>
+                                                                {/* CONTACT PROMPT */}
+                                                                {flagUI[item.riskId]?.contact?.open && (
+                                                                    <div
+                                                                        style={{
+                                                                            width: "100%",
+                                                                            marginTop: 10,
+                                                                            padding: 10,
+                                                                            background: "#fff",
+                                                                            borderRadius: 8,
+                                                                            border: "1px solid #e5e7eb",
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ fontWeight: 700, marginBottom: 6 }}>How did you contact the patient?</div>
 
-                                                                                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                                                                                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                                                                        Method:
-                                                                                        <select
-                                                                                            value={flagUI[item.riskId].contact.method}
-                                                                                            onChange={(e) => {
-                                                                                                const method = e.target.value;
-                                                                                                setFlagUI((prev) => ({
-                                                                                                    ...prev,
-                                                                                                    [item.riskId]: {
-                                                                                                        ...(prev[item.riskId] || {}),
-                                                                                                        contact: { ...prev[item.riskId].contact, method },
-                                                                                                    },
-                                                                                                }));
-                                                                                            }}
-                                                                                        >
-                                                                                            <option value="phone">Phone</option>
-                                                                                            <option value="email">Email</option>
-                                                                                        </select>
-                                                                                    </label>
-
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        placeholder="Optional note (e.g., left voicemail)"
-                                                                                        value={flagUI[item.riskId].contact.note}
-                                                                                        onChange={(e) => {
-                                                                                            const note = e.target.value;
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: {
-                                                                                                    ...(prev[item.riskId] || {}),
-                                                                                                    contact: { ...prev[item.riskId].contact, note },
-                                                                                                },
-                                                                                            }));
-                                                                                        }}
-                                                                                        style={{ flex: 1, minWidth: 220, padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
-                                                                                    />
-                                                                                </div>
-
-                                                                                {flagUI[item.riskId].contact.error && (
-                                                                                    <div style={{ color: "crimson", marginTop: 6 }}>
-                                                                                        {flagUI[item.riskId].contact.error}
-                                                                                    </div>
-                                                                                )}
-
-                                                                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-                                                                                    <button
-                                                                                        style={btn("secondary")}
-                                                                                        onClick={() => {
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: {
-                                                                                                    ...(prev[item.riskId] || {}),
-                                                                                                    contact: { open: false },
-                                                                                                },
-                                                                                            }));
-                                                                                        }}
-                                                                                    >
-                                                                                        Cancel
-                                                                                    </button>
-
-                                                                                    <button
-                                                                                        style={btn("primary")}
-                                                                                        disabled={!!flagUI[item.riskId].contact.saving}
-                                                                                        onClick={async () => {
-                                                                                            const ui = flagUI[item.riskId].contact;
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: { ...(prev[item.riskId] || {}), contact: { ...ui, saving: true } },
-                                                                                            }));
-
-                                                                                            await setFlag(item.riskId, {
-                                                                                                contacted: true,
-                                                                                                contactMethod: ui.method,
-                                                                                                contactNote: ui.note || null,
-                                                                                                contactedAt: new Date().toISOString(),
-                                                                                            });
-
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: {
-                                                                                                    ...(prev[item.riskId] || {}),
-                                                                                                    contact: { open: false },
-                                                                                                },
-                                                                                            }));
-                                                                                        }}
-                                                                                    >
-                                                                                        Save
-                                                                                    </button>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* SCHEDULE PROMPT */}
-                                                                        {flagUI[item.riskId]?.scheduled?.open && (
-                                                                            <div
-                                                                                style={{
-                                                                                    width: "100%",
-                                                                                    marginTop: 10,
-                                                                                    padding: 10,
-                                                                                    background: "#fff",
-                                                                                    borderRadius: 8,
-                                                                                    border: "1px solid #e5e7eb",
-                                                                                }}
-                                                                            >
-                                                                                <div style={{ fontWeight: 700, marginBottom: 6 }}>When is the appointment?</div>
-
-                                                                                <input
-                                                                                    type="datetime-local"
-                                                                                    value={flagUI[item.riskId].scheduled.at}
+                                                                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                                                            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                                                                Method:
+                                                                                <select
+                                                                                    value={flagUI[item.riskId].contact.method}
                                                                                     onChange={(e) => {
-                                                                                        const at = e.target.value;
+                                                                                        const method = e.target.value;
                                                                                         setFlagUI((prev) => ({
                                                                                             ...prev,
                                                                                             [item.riskId]: {
                                                                                                 ...(prev[item.riskId] || {}),
-                                                                                                scheduled: { ...prev[item.riskId].scheduled, at },
+                                                                                                contact: { ...prev[item.riskId].contact, method },
                                                                                             },
                                                                                         }));
                                                                                     }}
-                                                                                    style={{ padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
-                                                                                />
+                                                                                >
+                                                                                    <option value="phone">Phone</option>
+                                                                                    <option value="email">Email</option>
+                                                                                </select>
+                                                                            </label>
 
-                                                                                {flagUI[item.riskId].scheduled.error && (
-                                                                                    <div style={{ color: "crimson", marginTop: 6 }}>
-                                                                                        {flagUI[item.riskId].scheduled.error}
-                                                                                    </div>
-                                                                                )}
+                                                                            <input
+                                                                                type="text"
+                                                                                placeholder="Optional note (e.g., left voicemail)"
+                                                                                value={flagUI[item.riskId].contact.note}
+                                                                                onChange={(e) => {
+                                                                                    const note = e.target.value;
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { ...prev[item.riskId].contact, note },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                                style={{ flex: 1, minWidth: 220, padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
+                                                                            />
+                                                                        </div>
 
-                                                                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-                                                                                    <button
-                                                                                        style={btn("secondary")}
-                                                                                        onClick={() => {
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: {
-                                                                                                    ...(prev[item.riskId] || {}),
-                                                                                                    scheduled: { open: false },
-                                                                                                },
-                                                                                            }));
-                                                                                        }}
-                                                                                    >
-                                                                                        Cancel
-                                                                                    </button>
+                                                                        {flagUI[item.riskId].contact.error && (
+                                                                            <div style={{ color: "crimson", marginTop: 6 }}>
+                                                                                {flagUI[item.riskId].contact.error}
+                                                                            </div>
+                                                                        )}
 
-                                                                                    <button
-                                                                                        style={btn("primary")}
-                                                                                        disabled={!!flagUI[item.riskId].scheduled.saving}
-                                                                                        onClick={async () => {
-                                                                                            const ui = flagUI[item.riskId].scheduled;
-                                                                                            const local = (ui.at || "").trim();
-                                                                                            if (!local) {
-                                                                                                setFlagUI((prev) => ({
-                                                                                                    ...prev,
-                                                                                                    [item.riskId]: {
-                                                                                                        ...(prev[item.riskId] || {}),
-                                                                                                        scheduled: { ...ui, error: "Please select a date/time." },
-                                                                                                    },
-                                                                                                }));
-                                                                                                return;
-                                                                                            }
+                                                                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                                                                            <button
+                                                                                style={btn("secondary")}
+                                                                                onClick={() => {
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
 
-                                                                                            // datetime-local is local time; convert to ISO
-                                                                                            const apptIso = new Date(local).toISOString();
+                                                                            <button
+                                                                                style={btn("primary")}
+                                                                                disabled={!!flagUI[item.riskId].contact.saving}
+                                                                                onClick={async () => {
+                                                                                    const ui = flagUI[item.riskId].contact;
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: { ...(prev[item.riskId] || {}), contact: { ...ui, saving: true } },
+                                                                                    }));
 
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: { ...(prev[item.riskId] || {}), scheduled: { ...ui, saving: true, error: null } },
-                                                                                            }));
+                                                                                    await setFlag(item.riskId, {
+                                                                                        contacted: true,
+                                                                                        contactMethod: ui.method,
+                                                                                        contactNote: ui.note || null,
+                                                                                        contactedAt: new Date().toISOString(),
+                                                                                    });
 
-                                                                                            await setFlag(item.riskId, {
-                                                                                                scheduled: true,
-                                                                                                appointmentAt: apptIso,
-                                                                                            });
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
 
-                                                                                            setFlagUI((prev) => ({
-                                                                                                ...prev,
-                                                                                                [item.riskId]: {
-                                                                                                    ...(prev[item.riskId] || {}),
-                                                                                                    scheduled: { open: false },
-                                                                                                },
-                                                                                            }));
-                                                                                        }}
-                                                                                    >
-                                                                                        Save
-                                                                                    </button>
-                                                                                </div>
+                                                                {/* SCHEDULE PROMPT */}
+                                                                {flagUI[item.riskId]?.scheduled?.open && (
+                                                                    <div
+                                                                        style={{
+                                                                            width: "100%",
+                                                                            marginTop: 10,
+                                                                            padding: 10,
+                                                                            background: "#fff",
+                                                                            borderRadius: 8,
+                                                                            border: "1px solid #e5e7eb",
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ fontWeight: 700, marginBottom: 6 }}>When is the appointment?</div>
 
-                                                                                {/* Optional: show what’s saved */}
-                                                                                {!!d.data?.flags?.appointmentAt && (
-                                                                                    <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                                                                                        Saved appointment: {new Date(d.data.flags.appointmentAt).toLocaleString()}
-                                                                                    </div>
-                                                                                )}
+                                                                        <input
+                                                                            type="datetime-local"
+                                                                            value={flagUI[item.riskId].scheduled.at}
+                                                                            onChange={(e) => {
+                                                                                const at = e.target.value;
+                                                                                setFlagUI((prev) => ({
+                                                                                    ...prev,
+                                                                                    [item.riskId]: {
+                                                                                        ...(prev[item.riskId] || {}),
+                                                                                        scheduled: { ...prev[item.riskId].scheduled, at },
+                                                                                    },
+                                                                                }));
+                                                                            }}
+                                                                            style={{ padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
+                                                                        />
+
+                                                                        {flagUI[item.riskId].scheduled.error && (
+                                                                            <div style={{ color: "crimson", marginTop: 6 }}>
+                                                                                {flagUI[item.riskId].scheduled.error}
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                                                                            <button
+                                                                                style={btn("secondary")}
+                                                                                onClick={() => {
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            scheduled: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
+
+                                                                            <button
+                                                                                style={btn("primary")}
+                                                                                disabled={!!flagUI[item.riskId].scheduled.saving}
+                                                                                onClick={async () => {
+                                                                                    const ui = flagUI[item.riskId].scheduled;
+                                                                                    const local = (ui.at || "").trim();
+                                                                                    if (!local) {
+                                                                                        setFlagUI((prev) => ({
+                                                                                            ...prev,
+                                                                                            [item.riskId]: {
+                                                                                                ...(prev[item.riskId] || {}),
+                                                                                                scheduled: { ...ui, error: "Please select a date/time." },
+                                                                                            },
+                                                                                        }));
+                                                                                        return;
+                                                                                    }
+
+                                                                                    // datetime-local is local time; convert to ISO
+                                                                                    const apptIso = new Date(local).toISOString();
+
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: { ...(prev[item.riskId] || {}), scheduled: { ...ui, saving: true, error: null } },
+                                                                                    }));
+
+                                                                                    await setFlag(item.riskId, {
+                                                                                        scheduled: true,
+                                                                                        appointmentAt: apptIso,
+                                                                                    });
+
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            scheduled: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Optional: show what’s saved */}
+                                                                        {!!d.data?.flags?.appointmentAt && (
+                                                                            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                                                                                Saved appointment: {new Date(d.data.flags.appointmentAt).toLocaleString()}
                                                                             </div>
                                                                         )}
                                                                     </div>
+                                                                )}
+                                                            </div>
 
 
                                                             {/* Inline override editor */}
@@ -784,3 +780,4 @@ function btn(kind) {
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
 }
+``
