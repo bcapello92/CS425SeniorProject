@@ -1,6 +1,6 @@
 // hl-ui/src/triageClient.js
 import { getAccessToken } from "./auth.jsx";
-
+const token = getAccessToken();
 const BASE =
   import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
   "http://localhost:4000";
@@ -11,7 +11,7 @@ const CHAT_BASE =
 
 class TriageClient {
   async _request(path, { method = "GET", body } = {}) {
-    const token = getAccessToken();
+    
 
     const headers = {};
     if (body) {

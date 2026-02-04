@@ -8,10 +8,12 @@ import { HttpRequest } from "@smithy/protocol-http";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
-
+const app = express();
+app.use(cors({ origin: ["http://localhost:5173"] }));
+app.use(express.json());
 //triage model call
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
-const CHAT_SERVICE_URL=process.ev.CHAT_SERVICE_URL || "http://localhost:8002";
+const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
     patientId,
@@ -166,9 +168,7 @@ async function requireAuth(req, res, next) {
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
 // ---------------------------------------------------------
-const app = express();
-app.use(cors({ origin: ["http://localhost:5173"] }));
-app.use(express.json());
+
 
 const REGION = (process.env.REGION || process.env.AWS_REGION || "").trim();
 const DATASTORE_ID = (process.env.DATASTORE_ID || "").trim();

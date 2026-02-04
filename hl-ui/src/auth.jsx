@@ -66,7 +66,52 @@ export async function buildLoginUrl() {
 
   return `${COGNITO_DOMAIN}/login?${params.toString()}`;
 }
+export async function exchangeCodeForTokens(code) {
+  const verifier = sessionStorage.getItem("pkce_code_verifier");
+  if (!verifier) throw new Error("Missing PKCE code verifier (sessionStorage)");
 
+  const tokenUrl = `${COGNITO_DOMAIN}/oauth2/token`;
+
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: COGNITO_CLIENT_ID,
+    code,
+    redirect_uri: COGNITO_REDIRECT_URI,
+    code_verifier: verifier,
+  });
+
+  const resp = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  const text = await resp.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // token endpoint sometimes returns urlencoded-ish errors, keep raw
+  }
+
+  if (!resp.ok) {
+    throw new Error(data?.error_description || data?.error || text || `HTTP ${resp.status}`);
+  }
+
+  // Store tokens
+  if (data.access_token) localStorage.setItem("access_token", data.access_token);
+  if (data.id_token) localStorage.setItem("id_token", data.id_token);
+  if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
+
+  
+  if (data.expires_in) {
+    const expiresAt = Date.now() + Number(data.expires_in) * 1000;
+    localStorage.setItem("access_token_expires_at", String(expiresAt));
+  }
+
+  sessionStorage.removeItem("pkce_code_verifier");
+  return data;
+}
 export function buildLogoutUrl() {
   const params = new URLSearchParams({
     client_id: COGNITO_CLIENT_ID,
