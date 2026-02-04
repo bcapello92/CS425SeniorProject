@@ -11,7 +11,11 @@ import jwksClient from "jwks-rsa";
 
 //triage model call
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
-const CHAT_SERVICE_URL=process.ev.CHAT_SERVICE_URL || "http://localhost:8002";
+const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:8002";
+const app = express();
+
+app.use(cors({ origin: ["http://localhost:5173"] }));
+app.use(express.json());
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
     patientId,
@@ -62,31 +66,36 @@ async function callModelTriage({ patientId, answers, transcript }) {
     throw err;
   }
 }
+
+
 app.post("/api/patient-chat", async (req, res) => {
-  try {
-    const { messages } = req.body || {};
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "messages[] is required" });
+    try {
+        const resp = await fetch(`${CHAT_SERVICE_URL}/chat`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(req.body),
+        });
+
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok) {
+            return res
+                .status(resp.status)
+                .json({ error: data?.detail || data?.error || "Chat service failed" });
+        }
+
+        return res.json(data); // expected { reply }
+    } catch (e) {
+        console.error("[CHAT ERROR]", e);
+        return res.status(500).json({ error: e?.message || "Chat service unavailable" });
     }
-
-    const resp = await fetch(`${CHAT_SERVICE_URL}/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages }),
-    });
-
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      return res
-        .status(resp.status)
-        .json({ error: data?.detail || data?.error || "Chat service failed" });
-    }
-
-    res.json(data); // { reply }
-  } catch (e) {
-    res.status(500).json({ error: e?.message || String(e) });
-  }
 });
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, "0.0.0.0",() => {
+    console.log(`HealthLake proxy running on http://localhost:${PORT}`);
+});
+
 // ---------------------------------------------------------
 // COGNITO JWT AUTH (for provider routes) aws calls not original code
 // ---------------------------------------------------------
@@ -166,9 +175,7 @@ async function requireAuth(req, res, next) {
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
 // ---------------------------------------------------------
-const app = express();
-app.use(cors({ origin: ["http://localhost:5173"] }));
-app.use(express.json());
+
 
 const REGION = (process.env.REGION || process.env.AWS_REGION || "").trim();
 const DATASTORE_ID = (process.env.DATASTORE_ID || "").trim();
@@ -720,10 +727,3 @@ app.patch(
   }
 );
 
-// ---------------------------------------------------------
-// START SERVER
-// ---------------------------------------------------------
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () =>
-  console.log(`HealthLake proxy running on http://localhost:${PORT}`)
-);
