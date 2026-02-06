@@ -1,4 +1,4 @@
-﻿// hl-ui/src/auth.jsx
+// hl-ui/src/auth.jsx
 /*AWS pprebuild code*/
 // ----- Cognito config -----
 export const COGNITO_DOMAIN =
@@ -11,7 +11,7 @@ export const COGNITO_CLIENT_ID =
 export const COGNITO_REDIRECT_URI =
   import.meta.env.VITE_COGNITO_REDIRECT_URI ||
   "http://localhost:5173/staff/callback";
-  //built for locol host
+//built for locol host
 export const COGNITO_LOGOUT_URI =
   import.meta.env.VITE_COGNITO_LOGOUT_URI || "http://localhost:5173/";
 // Hosted UI token endpoint
@@ -103,7 +103,7 @@ export async function exchangeCodeForTokens(code) {
   if (data.id_token) localStorage.setItem("id_token", data.id_token);
   if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
 
-  
+
   if (data.expires_in) {
     const expiresAt = Date.now() + Number(data.expires_in) * 1000;
     localStorage.setItem("access_token_expires_at", String(expiresAt));
@@ -211,8 +211,7 @@ export async function handleCognitoCallback() {
 
   if (!resp.ok) {
     throw new Error(
-      `Token exchange failed (${resp.status}): ${
-        data?.error_description || data?.error || text
+      `Token exchange failed (${resp.status}): ${data?.error_description || data?.error || text
       }`
     );
   }

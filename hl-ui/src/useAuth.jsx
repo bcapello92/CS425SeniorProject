@@ -1,4 +1,4 @@
-﻿// hl-ui/src/useAuth.jsx
+// hl-ui/src/useAuth.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { buildLoginUrl, buildLogoutUrl } from "./auth.jsx";
 
@@ -38,14 +38,14 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  
+
   async function login(returnTo = "/provider") {
     sessionStorage.setItem("post_login_redirect", returnTo);
     const url = await buildLoginUrl();
     window.location.assign(url);
   }
 
-  
+
   function logout() {
     localStorage.removeItem("id_token");
     localStorage.removeItem("access_token");

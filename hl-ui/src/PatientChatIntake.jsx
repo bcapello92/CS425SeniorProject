@@ -1,29 +1,13 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 import ChatMessage from "./ChatMessage.jsx";
 import ChatInput from "./ChatInput.jsx";
-import { triageClient, sendChat } from "./triageClient";
-import "./App.css"; 
+import { triageClient } from "./triageClient";
+import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript } from "./ChatbotLogic";
+import "./Chatbot.css";
+
 /*Wiem original code start*/
 const BOT_GREETING =
   "👋 Hi! I’m your ENT assistant. Tell me what’s going on and I’ll ask a few follow-ups.";
-
-function uiToApiMessages(uiMessages) {
-  // Convert your UI message format to the FastAPI format: {role, content}
-  return uiMessages
-    .filter((m) => m && typeof m.text === "string" && m.text.trim() !== "")
-    .map((m) => ({
-      role: m.sender === "user" ? "user" : "assistant",
-      content: m.text,
-    }));
-}
-
-
-function buildTranscript(uiMessages) {
-  return uiMessages
-    .filter((m) => m && typeof m.text === "string" && m.text.trim() !== "")
-    .map((m) => `${m.sender === "user" ? "Patient" : "Assistant"}: ${m.text}`)
-    .join("\n");
-}
 
 export default function PatientChatIntake() {
   // ---------- patient + consent ----------
@@ -31,9 +15,12 @@ export default function PatientChatIntake() {
   const [patientId, setPatientId] = useState(null);
   const [consented, setConsented] = useState(false);
 
+  // Helper for timestamps
+  const getTimestamp = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   // ---------- chat state ----------
   const [messages, setMessages] = useState([
-    { sender: "bot", text: BOT_GREETING },
+    { sender: "bot", text: BOT_GREETING, timestamp: getTimestamp() },
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef(null);
@@ -53,7 +40,7 @@ export default function PatientChatIntake() {
     setEntryId("");
     setPatientId(null);
     setConsented(false);
-    setMessages([{ sender: "bot", text: BOT_GREETING }]);
+    setMessages([{ sender: "bot", text: BOT_GREETING, timestamp: getTimestamp() }]);
     setIsTyping(false);
     setSubmitting(false);
     setResult(null);
@@ -61,29 +48,18 @@ export default function PatientChatIntake() {
   }
 
   // ---------- Chat send ----------
-  const handleUserMessage = async (userInput) => {
-  const trimmed = userInput.trim();
-  if (!trimmed || !patientId) return;
-
-  const newMessages = [...messages, { sender: "user", text: trimmed }];
-  setMessages(newMessages);
-
-  setIsTyping(true);
-  setError(null);
-  try {
-    const apiMsgs = uiToApiMessages(newMessages);
-    const reply = await sendChat(apiMsgs);
-
-    setMessages((prev) => [...prev, { sender: "bot", text: reply }]);
-  } catch (e) {
-    setMessages((prev) => [
-      ...prev,
-      { sender: "bot", text: "❌ Chat error: " + (e?.message || e) + ". Please try again." },
-    ]);
-  } finally {
-    setIsTyping(false);
-  }
-};
+  const handleUserMessage = (userInput) => {
+    sharedHandleUserMessage({
+      userInput,
+      patientId,
+      isTyping,
+      messages,
+      setMessages,
+      setIsTyping,
+      completeConversation: sendForTriage,
+      getTimestamp
+    });
+  };
 
   // ---------- Send chat transcript for triage ----------
   async function sendForTriage() {
@@ -145,7 +121,7 @@ export default function PatientChatIntake() {
         ...prev,
         {
           sender: "bot",
-          text: "❌ Sorry, I couldn’t submit for triage. Please try again.",
+          text: "❌ Sorry, I couldn't submit for triage. Please try again.",
         },
       ]);
     } finally {
@@ -154,9 +130,9 @@ export default function PatientChatIntake() {
   }
 
   const userMessageCount = messages.filter((m) => m.sender === "user").length;
-  const canSendForTriage = hasStartedChat && !result && userMessageCount >= 2 && !submitting;
+  // const canSendForTriage = hasStartedChat && !result && userMessageCount >= 2 && !submitting;
 
-    return (
+  return (
     <div className="chatbot-wrapper">
       <header className="chatbot-header">
         <img src="/logo.png" alt="ENT Logo" className="logo" />
@@ -194,7 +170,7 @@ export default function PatientChatIntake() {
       )}
 
       {/* Chat window */}
-      {hasStartedChat && !result && (
+      {hasStartedChat && (
         <>
           <div className="chat-window">
             {messages.map((msg, index) => (
@@ -203,6 +179,7 @@ export default function PatientChatIntake() {
                 sender={msg.sender}
                 text={msg.text}
                 isHTML={msg.isHTML}
+                timestamp={msg.timestamp}
               />
             ))}
 
@@ -218,12 +195,23 @@ export default function PatientChatIntake() {
 
           {error && <div style={{ color: "crimson", marginTop: 8 }}>Error: {error}</div>}
 
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <div style={{ flex: 1 }}>
-              <ChatInput onSend={handleUserMessage} />
+          {/* After triage - show button above input */}
+          {result && (
+            <div style={{ padding: "16px 24px", background: "rgba(255,255,255,0.9)", textAlign: "center" }}>
+              <button onClick={resetAll} style={buttonSecondary}>
+                Start another intake
+              </button>
             </div>
+          )}
 
-            <button
+          {/* Only show input when triage not complete */}
+          {!result && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <div style={{ flex: 1 }}>
+                <ChatInput onSend={handleUserMessage} />
+              </div>
+
+              {/* <button
               onClick={sendForTriage}
               disabled={!canSendForTriage}
               style={{
@@ -239,31 +227,31 @@ export default function PatientChatIntake() {
               }
             >
               {submitting ? "Sending…" : "Send for Triage"}
-            </button>
-          </div>
+            </button> */}
+            </div>
+          )}
         </>
       )}
 
       {/* After triage */}
-      {result && (
+      {/* {result && (
         <div style={{ marginTop: 16 }}>
           <button onClick={resetAll} style={buttonSecondary}>
             Start another intake
           </button>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
 /*Wiem code end*/
 const card = {
-  margin: "16px auto",
+  margin: "16px",
   padding: 16,
   border: "1px solid #eee",
   borderRadius: 12,
   background: "#fff",
-  width: "100%",
-  maxWidth: 480,
+  width: "calc(100% - 32px)",
   boxShadow: "0 1px 8px rgba(0,0,0,0.05)"
 };
 
