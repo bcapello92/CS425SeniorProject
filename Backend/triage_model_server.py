@@ -10,8 +10,8 @@ import json
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"
 
 # Tune these for CPU speed
-MAX_TRANSCRIPT_CHARS = 1500
-MAX_NEW_TOKENS = 96
+MAX_TRANSCRIPT_CHARS = 2000
+MAX_NEW_TOKENS = 160
 
 app = FastAPI()
 
@@ -56,7 +56,7 @@ class IntakePayload(BaseModel):
 def keyword_fallback(payload: IntakePayload):
     """
     Backup classifier if the model output is empty/unparsable.
-    red > orange > green
+    red > orange > yellow
     """
     text = []
     for a in payload.answers:
@@ -96,7 +96,7 @@ def keyword_fallback(payload: IntakePayload):
             "Fallback: moderate-risk keywords detected (worsening symptoms, fever, moderate pain).",
         )
 
-    return ("green", "Fallback: no high-risk keywords detected; defaulting to routine.")
+    return ("yellow", "Fallback: no high-risk keywords detected; defaulting to routine.")
 
 
 def build_prompt(payload: IntakePayload) -> str:
@@ -118,23 +118,30 @@ def build_prompt(payload: IntakePayload) -> str:
             age_tag = f"[AGE_GROUP={age_group}]\n"
 
     return f"""
-You are a triage assistant. Based on the patient intake information, assign a triage color and explain why.
+You are a triage assistant. Use ONLY the provided Answers and Transcript.
+Do NOT invent medical history, diagnoses, or symptoms not explicitly stated.
 
 Triage colors:
 - red: life-threatening or very high risk
 - orange: urgent, needs prompt evaluation but not immediately life-threatening
-- green: non-urgent / routine
+- yellow: non-urgent / routine
 
-Return a single JSON object with two keys: "color" and "rationale".
-The "color" MUST be exactly one of: "red", "orange", "green".
+Output rules (must follow exactly):
+- Respond with JSON only (no markdown, no extra text).
+- Output EXACTLY ONE JSON object.
+- Start your response with '{{' and end with '}}'.
+- Keys must be exactly: "color", "rationale"
+- "color" must be exactly one of: "red", "orange", "yellow"
+- "rationale" must be ONE sentence, max 20 words.
+
+Example:
+{{"color":"orange","rationale":"Worsening throat pain and fever suggest urgent evaluation within hours."}}
 
 {age_tag}Answers:
 {answers_text}
 
 Transcript:
 {cleaned_transcript}
-
-Respond with JSON only.
 """.strip()
 
 
@@ -152,7 +159,7 @@ def run_model(prompt: str) -> str:
         outputs = model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            max_new_tokens=96,          # safe upper bound
+            max_new_tokens=MAX_NEW_TOKENS,
             do_sample=False,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
@@ -168,10 +175,7 @@ def run_model(prompt: str) -> str:
 
 
 def extract_first_json_object(text: str) -> str | None:
-    """
-    Find the first balanced {...} JSON object in the text.
-    More reliable than greedy regex.
-    """
+   
     if not text:
         return None
     s = text.strip()
@@ -227,8 +231,8 @@ def triage(payload: IntakePayload):
         color, rationale = keyword_fallback(payload)
         print("USING FALLBACK:", {"color": color, "rationale": rationale})
 
-    if color not in ("red", "orange", "green"):
-        color = "green"
+    if color not in ("red", "orange", "yellow"):
+        color = "yellow"
 
     return {"color": color, "rationale": rationale}
 
