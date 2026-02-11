@@ -468,7 +468,7 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-    console.log(`[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}`);
+    console.log('[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}');
 
     res.json({
       id: created?.id || null,
