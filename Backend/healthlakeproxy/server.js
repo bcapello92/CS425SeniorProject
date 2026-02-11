@@ -28,6 +28,21 @@ credentials: true,
 app.use(express.json());
 app.use(cookieParser());
 //triage model call
+app.post("/api/auth/logout", (req, res) => {
+    res.clearCookie("access_token", {
+        httpOnly: true,
+        scure,
+        sameSite: "lax",
+        path: "/",
+    });
+    res.clearCookie("refresh_token", {
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+    });
+    res.json({ ok: true });
+});
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
 async function callModelTriage({ patientId, answers, transcript }) {
@@ -162,58 +177,83 @@ function verifyToken(token) {
 }
 //AWS ccode end
 app.post("/api/auth/exchange", async (req, res) => {
-  try {
-    const { code, code_verifier } = req.body || {};
-    if (!code || !code_verifier) {
-      return res.status(400).json({ error: "code and code_verifier required" });
+    try {
+        const { code, code_verifier } = req.body || {};
+        if (!code || !code_verifier) {
+            return res.status(400).json({ error: "code and code_verifier required" });
+        }
+
+        const domainRaw = (process.env.COGNITO_DOMAIN || "").trim();
+        if (!domainRaw) {
+            return res.status(500).json({ error: "Missing COGNITO_DOMAIN env var" });
+        }
+
+        // Ensure it has https:// and no trailing slash
+        const domain = domainRaw.replace(/\/$/, "");
+        if (!/^https?:\/\//i.test(domain)) {
+            return res
+                .status(500)
+                .json({ error: "COGNITO_DOMAIN must include https:// (full URL)" });
+        }
+
+        const clientId = (process.env.COGNITO_CLIENT_ID || "").trim();
+        const redirectUri = (process.env.COGNITO_REDIRECT_URI || "").trim();
+        if (!clientId || !redirectUri) {
+            return res.status(500).json({
+                error: "Missing COGNITO_CLIENT_ID or COGNITO_REDIRECT_URI env var",
+            });
+        }
+
+        const tokenUrl = `${domain}/oauth2/token`;
+
+        const body = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: clientId,
+            code,
+            redirect_uri: redirectUri,
+            code_verifier,
+        });
+
+        const resp = await fetch(tokenUrl, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+        });
+
+        const text = await resp.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch { }
+
+        if (!resp.ok) {
+            return res
+                .status(resp.status)
+                .json({ error: data?.error_description || data?.error || text });
+        }
+
+        const secure = process.env.NODE_ENV === "production";
+        res.cookie("access_token", data.access_token, {
+            httpOnly: true,
+            secure,
+            sameSite: "lax",
+            path: "/",
+            maxAge: (data.expires_in || 3600) * 1000,
+        });
+
+        if (data.refresh_token) {
+            res.cookie("refresh_token", data.refresh_token, {
+                httpOnly: true,
+                secure,
+                sameSite: "lax",
+                path: "/",
+            });
+        }
+
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e?.message || String(e) });
     }
-
-    const tokenUrl = `${process.env.COGNITO_DOMAIN}/oauth2/token`; // or reuse your COGNITO_DOMAIN
-    const body = new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: process.env.COGNITO_CLIENT_ID,
-      code,
-      redirect_uri: process.env.COGNITO_REDIRECT_URI,
-      code_verifier,
-    });
-
-    const resp = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-    });
-
-    const text = await resp.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch {}
-
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: data?.error_description || data?.error || text });
-    }
-
-    // Set HttpOnly cookies (demo-friendly)
-    const secure = process.env.NODE_ENV === "production";
-    res.cookie("access_token", data.access_token, {
-      httpOnly: true,
-      secure,
-      sameSite: "lax",
-      path: "/",
-      maxAge: (data.expires_in || 3600) * 1000,
-    });
-    if (data.refresh_token) {
-      res.cookie("refresh_token", data.refresh_token, {
-        httpOnly: true,
-        secure,
-        sameSite: "lax",
-        path: "/",
-        // refresh tokens are longer-lived; you can set a longer maxAge or omit
-      });
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e?.message || String(e) });
-  }
 });
 // Express middleware to require Cognito login
 async function requireAuth(req, res, next) {

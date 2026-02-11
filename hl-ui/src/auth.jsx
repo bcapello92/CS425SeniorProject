@@ -14,7 +14,7 @@ export const COGNITO_REDIRECT_URI =
 export const COGNITO_LOGOUT_URI =
   import.meta.env.VITE_COGNITO_LOGOUT_URI || "http://localhost:5173/";
 
-// Your Express proxy base (adjust if needed)
+
 export const API_BASE =
   import.meta.env.VITE_API_BASE || "http://localhost:4000";
 
