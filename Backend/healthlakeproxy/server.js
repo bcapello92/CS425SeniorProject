@@ -8,9 +8,25 @@ import { HttpRequest } from "@smithy/protocol-http";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
+import cookieParser from "cookie-parser";
+import {
+  upsertUserAndMembership,
+  getMembershipWithPermissions,
+  listPendingMembers,
+  approveMember,
+  disableMember,
+  createRole,
+  deleteRole,
+  setRolePermissions,
+  listRoles,
+  listPermissions,
+} from "./rbac_db.js";
 const app = express();
-app.use(cors({ origin: ["http://localhost:5173"] }));
+app.use(cors({ origin: ["http://localhost:5173"], 
+credentials: true,
+}));
 app.use(express.json());
+app.use(cookieParser());
 //triage model call
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
@@ -145,24 +161,132 @@ function verifyToken(token) {
   });
 }
 //AWS ccode end
+app.post("/api/auth/exchange", async (req, res) => {
+  try {
+    const { code, code_verifier } = req.body || {};
+    if (!code || !code_verifier) {
+      return res.status(400).json({ error: "code and code_verifier required" });
+    }
 
+    const tokenUrl = `${process.env.COGNITO_DOMAIN}/oauth2/token`; // or reuse your COGNITO_DOMAIN
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: process.env.COGNITO_CLIENT_ID,
+      code,
+      redirect_uri: process.env.COGNITO_REDIRECT_URI,
+      code_verifier,
+    });
+
+    const resp = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    const text = await resp.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch {}
+
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: data?.error_description || data?.error || text });
+    }
+
+    // Set HttpOnly cookies (demo-friendly)
+    const secure = process.env.NODE_ENV === "production";
+    res.cookie("access_token", data.access_token, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: (data.expires_in || 3600) * 1000,
+    });
+    if (data.refresh_token) {
+      res.cookie("refresh_token", data.refresh_token, {
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+        // refresh tokens are longer-lived; you can set a longer maxAge or omit
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
 // Express middleware to require Cognito login
 async function requireAuth(req, res, next) {
   try {
-    const auth = req.headers.authorization || "";
-    const [, token] = auth.split(" ");
+    let token = null;
 
-    if (!token) {
-      return res.status(401).json({ error: "Missing bearer token" });
-    }
+    const auth = req.headers.authorization || "";
+    const [, bearer] = auth.split(" ");
+    if (bearer) token = bearer;
+
+    // fallback: cookie
+    if (!token && req.cookies?.access_token) token = req.cookies.access_token;
+
+    if (!token) return res.status(401).json({ error: "Missing token" });
 
     const decoded = await verifyToken(token);
     req.user = decoded;
     next();
   } catch (e) {
-    console.error("[AUTH ERROR]", e.message || e);
     return res.status(401).json({ error: "Invalid or missing token" });
   }
+}
+
+app.get("/api/me", requireAuth, (req, res) => {
+  try {
+    const sub = req.user?.sub;
+    const email = req.user?.email || null;
+
+    const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    const loaded = getMembershipWithPermissions(membership.id);
+
+    res.json({
+      ok: true,
+      sub,
+      email,
+      status: loaded.membership.status,
+      roles: loaded.roles,
+      permissions: loaded.permissions,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function requireActiveMembership(req, res, next) {
+  try {
+    const sub = req.user?.sub;
+    const email = req.user?.email || null;
+
+    const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    const loaded = getMembershipWithPermissions(membership.id);
+
+    req.membership = loaded.membership;
+    req.roles = loaded.roles;
+    req.permissions = new Set(loaded.permissions);
+
+    if (req.membership.status !== "active") {
+      return res.status(403).json({ error: `Account ${req.membership.status}.` });
+    }
+
+    next();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+function requirePermission(key) {
+  return (req, res, next) => {
+    if (!req.permissions?.has(key)) {
+      return res.status(403).json({ error: `Missing permission: ${key}` });
+    }
+    next();
+  };
 }
 /*AWS healthlake code start*/
 // ---------------------------------------------------------
@@ -312,7 +436,7 @@ app.get("/api/observations", async (req, res) => {
 // PROVIDER TRIAGE BOARD (PROTECTED) Brendan code
 // ---------------------------------------------------------
 // Fetch recent Observations, group by triage color from "Triage: red|orange|green"
-app.get("/api/triage-cases", requireAuth, async (req, res) => {
+app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const hours = Math.max(1, Math.min(168, Number(req.query.sinceHours || 24)));
     const sinceIso = new Date(Date.now() - hours * 3600e3).toISOString();
@@ -463,7 +587,7 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-    console.log(`[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}`);
+    console.log('[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}');
 
     res.json({
       id: created?.id || null,
@@ -646,7 +770,7 @@ app.patch(
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/override",
-  requireAuth,
+  requireAuth, requireActiveMembership, requirePermission("triage.override"),
   async (req, res) => {
     try {
       const rawId = req.params.riskId || "";
@@ -719,7 +843,133 @@ app.patch(
     }
   }
 );
+// ---------------------------
+// ADMIN: approvals (ADMIN ONLY via members.manage)
+// ---------------------------
+app.get(
+  "/api/admin/requests",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => res.json(listPendingMembers())
+);
 
+app.post(
+  "/api/admin/approve",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const { membership_id, roles } = req.body || {};
+      if (!membership_id) return res.status(400).json({ error: "membership_id required" });
+      if (!Array.isArray(roles) || roles.length === 0) {
+        return res.status(400).json({ error: "roles[] required (admin|medical|staff)" });
+      }
+
+      approveMember({
+        membership_id: Number(membership_id),
+        roleNames: roles,
+        approved_by_sub: req.user.sub,
+      });
+
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/disable",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const { membership_id } = req.body || {};
+      if (!membership_id) return res.status(400).json({ error: "membership_id required" });
+
+      disableMember({ membership_id: Number(membership_id) });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+// ---------------------------
+// ADMIN: roles/permissions (ADMIN ONLY via roles.manage)
+// ---------------------------
+app.get(
+  "/api/admin/roles",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => res.json(listRoles())
+);
+
+app.get(
+  "/api/admin/permissions",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => res.json(listPermissions())
+);
+
+app.post(
+  "/api/admin/roles",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      const { name, description } = req.body || {};
+      if (!name) return res.status(400).json({ error: "name required" });
+
+      const role = createRole({ name, description });
+      res.json(role);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.delete(
+  "/api/admin/roles/:roleId",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      deleteRole({ role_id: Number(req.params.roleId) });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/roles/:roleId/permissions",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      const role_id = Number(req.params.roleId);
+      const { permissions } = req.body || {};
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ error: "permissions[] required" });
+      }
+
+      setRolePermissions({ role_id, permKeys: permissions });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
 // ---------------------------------------------------------
 // START SERVER
 // ---------------------------------------------------------

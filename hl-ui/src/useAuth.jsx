@@ -1,60 +1,58 @@
 ﻿// hl-ui/src/useAuth.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { buildLoginUrl, buildLogoutUrl } from "./auth.jsx";
+import { buildLoginUrl, buildLogoutUrl, logoutServer, API_BASE } from "./auth.jsx";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [accessToken, setAccessToken] = useState(null);
+  const [me, setMe] = useState(null);
+
+  async function refreshMe() {
+    try {
+      const resp = await fetch(`${API_BASE}/api/me`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (!resp.ok) {
+        setIsAuthenticated(false);
+        setMe(null);
+        return;
+      }
+
+      const data = await resp.json().catch(() => ({}));
+      setIsAuthenticated(true);
+      setMe(data);
+    } catch {
+      setIsAuthenticated(false);
+      setMe(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
 
-    const sync = () => {
-      const token = localStorage.getItem("access_token");
-      if (cancelled) return;
-
-      if (token) {
-        setIsAuthenticated(true);
-        setAccessToken(token);
-      } else {
-        setIsAuthenticated(false);
-        setAccessToken(null);
-      }
-      setLoading(false);
-    };
-
-    sync();
-
-    // keep tabs synced
-    const onStorage = () => sync();
-    window.addEventListener("storage", onStorage);
+    (async () => {
+      await refreshMe();
+      if (!cancelled) setLoading(false);
+    })();
 
     return () => {
       cancelled = true;
-      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
-  
   async function login(returnTo = "/provider") {
     sessionStorage.setItem("post_login_redirect", returnTo);
     const url = await buildLoginUrl();
     window.location.assign(url);
   }
 
-  
-  function logout() {
-    localStorage.removeItem("id_token");
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("access_token_expires_at");
+  async function logout() {
     sessionStorage.removeItem("post_login_redirect");
-
-    setIsAuthenticated(false);
-    setAccessToken(null);
+    await logoutServer();
 
     const url = buildLogoutUrl();
     window.location.assign(url);
@@ -62,7 +60,14 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ loading, isAuthenticated, accessToken, login, logout }}
+      value={{
+        loading,
+        isAuthenticated,
+        me,            
+        refreshMe,     
+        login,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>
