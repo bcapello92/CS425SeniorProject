@@ -55,6 +55,22 @@ db.exec([
   "  FOREIGN KEY(membership_id) REFERENCES memberships(id),",
   "  FOREIGN KEY(role_id) REFERENCES roles(id)",
   ");",
+    // ---------- audit_log ----------
+  "CREATE TABLE IF NOT EXISTS audit_log (",
+  "  id INTEGER PRIMARY KEY AUTOINCREMENT,",
+  "  at TEXT NOT NULL,",
+  "  actor_membership_id INTEGER NOT NULL,",
+  "  actor_user_id INTEGER NOT NULL,",
+  "  action TEXT NOT NULL,",
+  "  resource_type TEXT,",
+  "  resource_id TEXT,",
+  "  details_json TEXT,",
+  "  FOREIGN KEY(actor_membership_id) REFERENCES memberships(id),",
+  "  FOREIGN KEY(actor_user_id) REFERENCES users(id)",
+  ");",
+
+  // helpful index
+  "CREATE INDEX IF NOT EXISTS idx_audit_actor_at ON audit_log(actor_membership_id, at DESC);",
 ].join("\n"));
 // ---------- seed permissions ----------
 const seedPermission = db.prepare(`
@@ -244,4 +260,41 @@ export function setRolePermissions({ role_id, permKeys }) {
     if (!p) throw new Error(`Unknown permission: ${key}`);
     ins.run(role_id, p.id);
   }
+}
+//audit functions
+export function logAudit({
+  actor_membership_id,
+  actor_user_id,
+  action,
+  resource_type = null,
+  resource_id = null,
+  details = null,
+}) {
+  const at = new Date().toISOString();
+  const details_json = details ? JSON.stringify(details) : null;
+
+  db.prepare(
+    "INSERT INTO audit_log(at, actor_membership_id, actor_user_id, action, resource_type, resource_id, details_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(at, actor_membership_id, actor_user_id, action, resource_type, resource_id, details_json);
+}
+
+export function listMyAudit({ actor_membership_id, limit = 50 }) {
+  return db
+    .prepare(
+      "SELECT id, at, action, resource_type, resource_id, details_json FROM audit_log WHERE actor_membership_id=? ORDER BY at DESC LIMIT ?"
+    )
+    .all(actor_membership_id, limit);
+}
+
+export function listAuditAll({ limit = 200 }) {
+  return db
+    .prepare(
+      `SELECT a.id, a.at, u.email, a.actor_membership_id, a.action, a.resource_type, a.resource_id, a.details_json
+       FROM audit_log a
+       JOIN memberships m ON m.id = a.actor_membership_id
+       JOIN users u ON u.id = a.actor_user_id
+       ORDER BY a.at DESC
+       LIMIT ?`
+    )
+    .all(limit);
 }

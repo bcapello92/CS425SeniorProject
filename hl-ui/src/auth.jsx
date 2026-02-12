@@ -91,8 +91,16 @@ export function buildLogoutUrl() {
 
 // Clear server cookies
 export async function logoutServer() {
-  await fetch(`${API_BASE}/api/auth/logout`, {
+ const resp = await fetch(`${API_BASE}/api/auth/logout`, {
     method: "POST",
     credentials: "include",
-  }).catch(() => {});
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+    cache: "no-store",
+  });
+
+  const text = await resp.text().catch(() => "");
+  if (!resp.ok) {
+    throw new Error(`Logout failed ${resp.status}: ${text}`);
+  }
 }

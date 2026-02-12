@@ -14,7 +14,7 @@ class TriageClient {
         const res = await fetch(`${BASE}${path}`, {
             method,
             headers,
-            credentials: "include", // <-- IMPORTANT: send cookies
+            credentials: "include", 
             body: body ? JSON.stringify(body) : undefined,
         });
 

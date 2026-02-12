@@ -52,10 +52,11 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     sessionStorage.removeItem("post_login_redirect");
-    await logoutServer();
 
-    const url = buildLogoutUrl();
-    window.location.assign(url);
+  await logoutServer();
+  await refreshMe(); // confirm /api/me becomes 401
+
+  window.location.assign(buildLogoutUrl());
   }
 
   return (

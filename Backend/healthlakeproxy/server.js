@@ -27,21 +27,24 @@ credentials: true,
 }));
 app.use(express.json());
 app.use(cookieParser());
-//triage model call
+
+
+//logout
 app.post("/api/auth/logout", (req, res) => {
+    const secure=process.env.NODE_ENV==="production";
+
     res.clearCookie("access_token", {
-        httpOnly: true,
-        scure,
-        sameSite: "lax",
-        path: "/",
-    });
-    res.clearCookie("refresh_token", {
-        httpOnly: true,
-        secure,
-        sameSite: "lax",
-        path: "/",
-    });
-    res.json({ ok: true });
+    path: "/",
+    sameSite: "lax",
+    secure,
+  });
+
+  res.clearCookie("refresh_token", {
+    path: "/",
+    sameSite: "lax",
+    secure,
+  });
+    return res.status(200).json({ok:true});
 });
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";

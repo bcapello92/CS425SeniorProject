@@ -6,6 +6,7 @@ import ProviderHome from "./ProviderHome.jsx";
 import ProviderTriage from "./ProviderTriage.jsx";
 import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
+import ProviderAccount from "./ProviderAccount.jsx"
 import { useAuth } from "./useAuth.jsx";
 import {useEffect} from "react";
 
@@ -54,7 +55,14 @@ export default function App() {
             </Protected>
           }
         />
-
+        <Route
+           path="/provider/account"
+           element={
+               <Protected>
+                <ProviderAccount/>
+               </Protected>
+           }
+        />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
