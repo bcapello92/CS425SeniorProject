@@ -66,7 +66,7 @@ const card = {
     background: "#fff",
     border: "1px solid #eee",
     cursor: "pointer",
-    boxShadow: "0 1px 6px rbga(0,0,0,0.06)",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
     transition: "transform .1s ease",
 };
 

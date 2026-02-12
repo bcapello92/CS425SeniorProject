@@ -7,8 +7,12 @@ import ProviderTriage from "./ProviderTriage.jsx";
 import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import ProviderAccount from "./ProviderAccount.jsx"
+import AdminHome from "./AdminHome.jsx";
+import AccountManagement from "./AccountManagment.jsx";
 import { useAuth } from "./useAuth.jsx";
 import {useEffect} from "react";
+
+
 
 function Protected({ children }) {
   const { loading, isAuthenticated, login } = useAuth();
@@ -62,7 +66,31 @@ export default function App() {
                 <ProviderAccount/>
                </Protected>
            }
-        />
+              />
+              <Route
+                  path="/proiver/account"
+                  element={
+                      <Protected>
+                          <ProviderAccount />
+                      </Protected>
+                  }
+              />
+              <Route
+                  path="/proivder/admin"
+                  element={
+                      <Protected>
+                          <AdminHome />
+                      </Protected>
+                  }
+              />
+              <Route
+                  path="/provider/admin/accounts"
+                  element={
+                      <Protected><AccountManagement />
+                      </Protected>
+                  }
+
+              />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

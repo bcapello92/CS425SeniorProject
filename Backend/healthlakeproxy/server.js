@@ -20,7 +20,11 @@ import {
   setRolePermissions,
   listRoles,
   listPermissions,
+  logAudit,
+    listMyAudit,
+   listAuditAll
 } from "./rbac_db.js";
+
 const app = express();
 app.use(cors({ origin: ["http://localhost:5173"], 
 credentials: true,
@@ -306,7 +310,8 @@ function requireActiveMembership(req, res, next) {
     const sub = req.user?.sub;
     const email = req.user?.email || null;
 
-    const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    const { user, membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    req.userId = user.id;
     const loaded = getMembershipWithPermissions(membership.id);
 
     req.membership = loaded.membership;
@@ -331,6 +336,29 @@ function requirePermission(key) {
     next();
   };
 }
+app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
+    res.json({
+        ok: true,
+        email: req.user?.email || null,
+        sub: req.user?.sub || null,
+        status: req.membership.status,
+        roles: req.roles,
+        permissions: Array.from(req.permissions || []),
+    });
+});
+app.get("/api/audit/my", requireAuth, requireActiveMembership, (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const rows = listMyAudit({ actor_membership_id: req.membership.id, limit });
+    res.json(rows.map(r => ({
+        ...r, details: r.retailds_json ? JSON.parse(r.details_json) : null
+    })));
+
+});
+app.get("/api/admin/audit", requireAuth, requireActiveMembership, requirePermission("members.manage"), (req, res) => {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+    const rows = listAuditAll({ limit });
+    res.json(rows.map(r => ({ ...r, details: r.details_json ? JSON.parse(r.details_json) : null })));
+});
 /*AWS healthlake code start*/
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
@@ -630,7 +658,7 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-    console.log('[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}');
+      console.log("[INTAKE] Successfully created Observation " + (created?.id || "") + " for patient " + patiendId);;
 
     res.json({
       id: created?.id || null,
@@ -754,7 +782,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/flags",
-  requireAuth,
+  requireAuth, requireActiveMembership, requirePermission("triage.flag"),
   async (req, res) => {
     try {
       const rawId = req.params.riskId || "";
@@ -800,7 +828,14 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership_id,
+            actor_user_id: req.userId,
+            action: "triage.flag.update",
+            resource_type: "Observation",
+            resource_id: riskId,
+            details: { updates },
+        });
       res.json({ ok: true, flags });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
@@ -832,12 +867,12 @@ app.patch(
           .json({ error: "color must be red|orange|yellow" });
       }
 
-      // load Observation
+      // oad Observation
       const obs = await signedFetch({
         path: `/Observation/${encodeURIComponent(riskId)}`,
       });
 
-      // 1) update valueCodeableConcept
+      //update valueCodeableConcept
       obs.valueCodeableConcept = obs.valueCodeableConcept || {};
       obs.valueCodeableConcept.text = color;
       obs.valueCodeableConcept.coding = [
@@ -847,7 +882,7 @@ app.patch(
         },
       ];
 
-      // 2) update/add "Triage: <color>" note
+      //update/add "Triage: <color>" note
       const notes = obs.note || [];
       const triageNoteIdx = notes.findIndex(
         (n) => typeof n?.text === "string" && /^triage\s*:/i.test(n.text)
@@ -860,7 +895,7 @@ app.patch(
       }
       obs.note = notes;
 
-      // 3) record override reason in extension
+      //record override reason in extension
       const overrideUrl = "http://example.org/triage-override";
       const exts = obs.extension || [];
       const ts = new Date().toISOString();
@@ -879,7 +914,14 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "triage.override",
+            resource_type: "Observation",
+            resource_id: riskID,
+            details: { color, reason },
+        });
       res.json({ ok: true, color, override: payload });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
@@ -915,7 +957,14 @@ app.post(
         roleNames: roles,
         approved_by_sub: req.user.sub,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actior_user_id: req.userId,
+            action: "member.approve",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: {roles},
+        });
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e.message });
@@ -933,7 +982,15 @@ app.post(
       const { membership_id } = req.body || {};
       if (!membership_id) return res.status(400).json({ error: "membership_id required" });
 
-      disableMember({ membership_id: Number(membership_id) });
+        disableMember({ membership_id: Number(membership_id) });
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actior_user_id: req.userId,
+            action: "member.disable",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: { roles },
+        });
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e.message });

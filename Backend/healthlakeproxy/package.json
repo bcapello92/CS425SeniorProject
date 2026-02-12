@@ -8,6 +8,7 @@
     "dev": "cross-env NODE_ENV=development node server.js"
   },
   "dependencies": {
+    "22": "^0.0.0",
     "@aws-crypto/sha256-js": "^3.0.0",
     "@aws-sdk/client-sts": "^3.901.0",
     "@aws-sdk/credential-provider-ini": "^3.901.0",
@@ -15,7 +16,7 @@
     "@aws-sdk/credential-providers": "^3.932.0",
     "@aws-sdk/signature-v4": "^3.370.0",
     "@smithy/protocol-http": "^3.3.0",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.4.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
