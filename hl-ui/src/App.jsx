@@ -68,7 +68,7 @@ export default function App() {
            }
               />
               <Route
-                  path="/proiver/account"
+                  path="/provider/account"
                   element={
                       <Protected>
                           <ProviderAccount />
@@ -76,7 +76,7 @@ export default function App() {
                   }
               />
               <Route
-                  path="/proivder/admin"
+                  path="/provider/admin"
                   element={
                       <Protected>
                           <AdminHome />
