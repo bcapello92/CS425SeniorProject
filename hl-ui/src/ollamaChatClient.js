@@ -4,7 +4,7 @@ const OLLAMA_CHAT_BASE =
 
 export async function sendChat(messages) {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  const t = setTimeout(() => controller.abort(), 60000); // 60s timeout (allows for Ollama cold start)
 
   try {
     const res = await fetch(`${OLLAMA_CHAT_BASE}/chat`, {

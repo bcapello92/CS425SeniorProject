@@ -1,7 +1,7 @@
 import React from "react";
-import "./App.css";
+import "./Chatbot.css";
 //wiem code
-const ChatMessage = ({ sender, text, isHTML = false }) => {
+const ChatMessage = ({ sender, text, isHTML = false, timestamp }) => {
   return (
     <div className={sender === "user" ? "message-user" : "message-bot"}>
       {isHTML ? (
@@ -9,6 +9,7 @@ const ChatMessage = ({ sender, text, isHTML = false }) => {
       ) : (
         text
       )}
+      {timestamp && <span className="message-timestamp">{timestamp}</span>}
     </div>
   );
 };

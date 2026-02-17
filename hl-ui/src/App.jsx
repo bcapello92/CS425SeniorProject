@@ -8,7 +8,7 @@ import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import ProviderAccount from "./ProviderAccount.jsx"
 import { useAuth } from "./useAuth.jsx";
-import {useEffect} from "react";
+import { useEffect } from "react";
 
 function Protected({ children }) {
   const { loading, isAuthenticated, login } = useAuth();

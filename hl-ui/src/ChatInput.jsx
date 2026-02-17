@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./App.css";
+import "./Chatbot.css";
 /*Wiem code start*/
 const ChatInput = ({ onSend }) => {
   const [input, setInput] = useState("");
@@ -7,7 +7,7 @@ const ChatInput = ({ onSend }) => {
   const handleSend = () => {
     if (input.trim() !== "") {
       onSend(input);
-      setInput(""); 
+      setInput("");
     }
   };
 
