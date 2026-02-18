@@ -69,9 +69,31 @@ db.exec([
   "  FOREIGN KEY(actor_user_id) REFERENCES users(id)",
   ");",
 
+  // ---------- member_invites ----------
+  "CREATE TABLE IF NOT EXISTS member_invites (",
+  "  id INTEGER PRIMARY KEY AUTOINCREMENT,",
+  "  email TEXT NOT NULL UNIQUE,",
+  "  suggested_role TEXT,",
+  "  note TEXT,",
+  "  status TEXT NOT NULL DEFAULT 'sent' CHECK(status IN ('sent','cancelled','accepted')),",
+  "  invited_at TEXT NOT NULL,",
+  "  invited_by_membership_id INTEGER NOT NULL,",
+  "  invited_by_user_id INTEGER NOT NULL,",
+  "  FOREIGN KEY(invited_by_membership_id) REFERENCES memberships(id),",
+  "  FOREIGN KEY(invited_by_user_id) REFERENCES users(id)",
+  ");",
+
   // helpful index
   "CREATE INDEX IF NOT EXISTS idx_audit_actor_at ON audit_log(actor_membership_id, at DESC);",
+  "CREATE INDEX IF NOT EXISTS idx_member_invites_invited_at ON member_invites(invited_at DESC);",
 ].join("\n"));
+
+// Lightweight schema migrations for existing local DBs.
+try {
+  db.prepare("ALTER TABLE users ADD COLUMN display_name TEXT").run();
+} catch {
+  // column already exists
+}
 // ---------- seed permissions ----------
 const seedPermission = db.prepare(`
   INSERT OR IGNORE INTO permissions(key, description) VALUES (?, ?)
@@ -127,11 +149,12 @@ function grant(roleName, permKey) {
 // ---------- helpers ----------
 export function upsertUserAndMembership({ cognito_sub, email }) {
   const now = new Date().toISOString();
+  const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
 
   db.prepare(`
     INSERT OR IGNORE INTO users(cognito_sub, email, created_at)
     VALUES (?, ?, ?)
-  `).run(cognito_sub, email || null, now);
+  `).run(cognito_sub, normalizedEmail || null, now);
 
   const user = db.prepare(`SELECT * FROM users WHERE cognito_sub = ?`).get(cognito_sub);
 
@@ -140,6 +163,44 @@ export function upsertUserAndMembership({ cognito_sub, email }) {
     INSERT OR IGNORE INTO memberships(user_id, status, created_at)
     VALUES (?, 'pending', ?)
   `).run(user.id, now);
+
+  let membership = db.prepare(`SELECT * FROM memberships WHERE user_id=?`).get(user.id);
+
+  // Auto-activate invited users on first login and apply suggested role.
+  if (normalizedEmail && membership?.status === "pending") {
+    const invite = db
+      .prepare(
+        "SELECT * FROM member_invites WHERE LOWER(email)=LOWER(?) AND status='sent' ORDER BY invited_at DESC LIMIT 1"
+      )
+      .get(normalizedEmail);
+
+    if (invite) {
+      const roleName = invite.suggested_role || "staff";
+      const role = getRoleId.get(roleName) || getRoleId.get("staff");
+
+      db.prepare(`
+        UPDATE memberships
+        SET status='active', approved_at=?, approved_by_user_id=?
+        WHERE id=?
+      `).run(now, invite.invited_by_user_id, membership.id);
+
+      db.prepare(`DELETE FROM membership_roles WHERE membership_id=?`).run(membership.id);
+      if (role?.id) {
+        db.prepare(`
+          INSERT OR IGNORE INTO membership_roles(membership_id, role_id)
+          VALUES (?, ?)
+        `).run(membership.id, role.id);
+      }
+
+      db.prepare(`
+        UPDATE member_invites
+        SET status='accepted'
+        WHERE id=?
+      `).run(invite.id);
+
+      membership = db.prepare(`SELECT * FROM memberships WHERE user_id=?`).get(user.id);
+    }
+  }
 
   // Bootstrap: first active user becomes active + admin
   const activeCount = db.prepare(`SELECT COUNT(*) AS n FROM memberships WHERE status='active'`).get().n;
@@ -160,8 +221,28 @@ export function upsertUserAndMembership({ cognito_sub, email }) {
     }
   }
 
-  const membership = db.prepare(`SELECT * FROM memberships WHERE user_id=?`).get(user.id);
+  membership = db.prepare(`SELECT * FROM memberships WHERE user_id=?`).get(user.id);
   return { user, membership };
+}
+
+export function getUserById(user_id) {
+  return db.prepare("SELECT id, cognito_sub, email, display_name, created_at FROM users WHERE id=?").get(user_id);
+}
+
+export function updateUserDisplayName({ user_id, display_name }) {
+  const value = display_name && String(display_name).trim() ? String(display_name).trim() : null;
+  db.prepare("UPDATE users SET display_name=? WHERE id=?").run(value, user_id);
+  return getUserById(user_id);
+}
+
+export function disableSelfAccount({ user_id }) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE memberships
+    SET status='disabled', approved_at=COALESCE(approved_at, ?)
+    WHERE user_id=?
+  `).run(now, user_id);
+  db.prepare("DELETE FROM membership_roles WHERE membership_id IN (SELECT id FROM memberships WHERE user_id=?)").run(user_id);
 }
 
 export function getMembershipWithPermissions(membership_id) {
@@ -261,6 +342,57 @@ export function setRolePermissions({ role_id, permKeys }) {
     ins.run(role_id, p.id);
   }
 }
+
+export function createOrRefreshInvite({
+  email,
+  suggested_role = null,
+  note = null,
+  invited_by_membership_id,
+  invited_by_user_id,
+}) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) throw new Error("email is required");
+
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO member_invites(email, suggested_role, note, status, invited_at, invited_by_membership_id, invited_by_user_id)
+    VALUES (?, ?, ?, 'sent', ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET
+      suggested_role=excluded.suggested_role,
+      note=excluded.note,
+      status='sent',
+      invited_at=excluded.invited_at,
+      invited_by_membership_id=excluded.invited_by_membership_id,
+      invited_by_user_id=excluded.invited_by_user_id
+  `).run(
+    normalizedEmail,
+    suggested_role,
+    note,
+    now,
+    invited_by_membership_id,
+    invited_by_user_id
+  );
+
+  return db
+    .prepare(
+      "SELECT id, email, suggested_role, note, status, invited_at, invited_by_membership_id, invited_by_user_id FROM member_invites WHERE email=?"
+    )
+    .get(normalizedEmail);
+}
+
+export function listMemberInvites({ limit = 100 }) {
+  return db
+    .prepare(
+      `SELECT i.id, i.email, i.suggested_role, i.note, i.status, i.invited_at,
+              i.invited_by_membership_id, i.invited_by_user_id, u.email AS invited_by_email
+       FROM member_invites i
+       LEFT JOIN users u ON u.id = i.invited_by_user_id
+       ORDER BY i.invited_at DESC
+       LIMIT ?`
+    )
+    .all(limit);
+}
 //audit functions
 export function logAudit({
   actor_membership_id,
@@ -289,7 +421,7 @@ export function listMyAudit({ actor_membership_id, limit = 50 }) {
 export function listAuditAll({ limit = 200 }) {
   return db
     .prepare(
-      `SELECT a.id, a.at, u.email, a.actor_membership_id, a.action, a.resource_type, a.resource_id, a.details_json
+      `SELECT a.id, a.at, u.email, u.cognito_sub, a.actor_user_id, a.actor_membership_id, a.action, a.resource_type, a.resource_id, a.details_json
        FROM audit_log a
        JOIN memberships m ON m.id = a.actor_membership_id
        JOIN users u ON u.id = a.actor_user_id
