@@ -11,6 +11,9 @@ import jwksClient from "jwks-rsa";
 import cookieParser from "cookie-parser";
 import {
   upsertUserAndMembership,
+  getUserById,
+  updateUserDisplayName,
+  disableSelfAccount,
   getMembershipWithPermissions,
   listPendingMembers,
   approveMember,
@@ -20,7 +23,13 @@ import {
   setRolePermissions,
   listRoles,
   listPermissions,
+  createOrRefreshInvite,
+  listMemberInvites,
+  logAudit,
+    listMyAudit,
+   listAuditAll
 } from "./rbac_db.js";
+
 const app = express();
 app.use(cors({ origin: ["http://localhost:5173"], 
 credentials: true,
@@ -285,16 +294,18 @@ app.get("/api/me", requireAuth, (req, res) => {
     const sub = req.user?.sub;
     const email = req.user?.email || null;
 
-    const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
-    const loaded = getMembershipWithPermissions(membership.id);
+  const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+  const loaded = getMembershipWithPermissions(membership.id);
+  const user = getUserById(membership.user_id);
 
-    res.json({
-      ok: true,
-      sub,
-      email,
-      status: loaded.membership.status,
-      roles: loaded.roles,
-      permissions: loaded.permissions,
+  res.json({
+    ok: true,
+    sub,
+    email,
+    displayName: user?.display_name || null,
+    status: loaded.membership.status,
+    roles: loaded.roles,
+    permissions: loaded.permissions,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -306,7 +317,8 @@ function requireActiveMembership(req, res, next) {
     const sub = req.user?.sub;
     const email = req.user?.email || null;
 
-    const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    const { user, membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    req.userId = user.id;
     const loaded = getMembershipWithPermissions(membership.id);
 
     req.membership = loaded.membership;
@@ -331,6 +343,222 @@ function requirePermission(key) {
     next();
   };
 }
+
+function parseJsonOrNull(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
+    const user = getUserById(req.userId);
+    res.json({
+        ok: true,
+        email: req.user?.email || null,
+        displayName: user?.display_name || null,
+        sub: req.user?.sub || null,
+        status: req.membership.status,
+        roles: req.roles,
+        permissions: Array.from(req.permissions || []),
+    });
+});
+
+app.get("/api/account/profile", requireAuth, requireActiveMembership, (req, res) => {
+  const user = getUserById(req.userId);
+  res.json({
+    ok: true,
+    email: user?.email || req.user?.email || null,
+    displayName: user?.display_name || null,
+    sub: req.user?.sub || null,
+    status: req.membership?.status || null,
+  });
+});
+
+app.patch("/api/account/profile", requireAuth, requireActiveMembership, (req, res) => {
+  try {
+    const displayName = req.body?.displayName;
+    if (displayName != null && String(displayName).trim().length > 80) {
+      return res.status(400).json({ error: "displayName must be 80 characters or fewer" });
+    }
+
+    const user = updateUserDisplayName({
+      user_id: req.userId,
+      display_name: displayName,
+    });
+
+    logAudit({
+      actor_membership_id: req.membership.id,
+      actor_user_id: req.userId,
+      action: "account.profile.update",
+      resource_type: "user",
+      resource_id: String(req.userId),
+      details: { displayName: user?.display_name || null },
+    });
+
+    res.json({
+      ok: true,
+      email: user?.email || req.user?.email || null,
+      displayName: user?.display_name || null,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+async function deleteCognitoUserBySub(sub) {
+  if (!sub) return { deleted: false, reason: "missing_sub" };
+  if (!COGNITO_USER_POOL_ID) return { deleted: false, reason: "missing_user_pool" };
+
+  const client = await getCognitoAdminClient();
+  const escapedSub = String(sub).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  const existing = await client.send(
+    new cognitoSdk.ListUsersCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Filter: `sub = "${escapedSub}"`,
+      Limit: 1,
+    })
+  );
+
+  const username = existing?.Users?.[0]?.Username;
+  if (!username) return { deleted: false, reason: "not_found" };
+
+  await client.send(
+    new cognitoSdk.AdminDeleteUserCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Username: username,
+    })
+  );
+
+  return { deleted: true, username };
+}
+
+app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || "").trim();
+    if (confirm !== "DELETE") {
+      return res.status(400).json({ error: "confirm must be DELETE" });
+    }
+
+    const cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    disableSelfAccount({ user_id: req.userId });
+
+    logAudit({
+      actor_membership_id: req.membership.id,
+      actor_user_id: req.userId,
+      action: "account.delete",
+      resource_type: "user",
+      resource_id: String(req.userId),
+      details: { cognito: cognitoResult },
+    });
+
+    const secure = process.env.NODE_ENV === "production";
+    res.clearCookie("access_token", { path: "/", sameSite: "lax", secure });
+    res.clearCookie("refresh_token", { path: "/", sameSite: "lax", secure });
+
+    res.json({ ok: true, deleted: true, cognito: cognitoResult });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get("/api/provider/home", requireAuth, requireActiveMembership, async (req, res) => {
+  try {
+    const permissions = Array.from(req.permissions || []);
+    const canReadTriage = req.permissions?.has("triage.read");
+
+    const auditRows = canReadTriage
+      ? listAuditAll({ limit: 200 })
+          .filter((r) => /^(triage|member)\./.test(String(r.action || "")))
+          .slice(0, 25)
+      : listMyAudit({
+          actor_membership_id: req.membership.id,
+          limit: 10,
+        });
+
+    const recentAudit = auditRows.map((r) => ({
+      ...r,
+      actorEmail:
+        r.email ||
+        r.cognito_sub ||
+        req.user?.email ||
+        (r.actor_user_id ? `user#${r.actor_user_id}` : null),
+      details: parseJsonOrNull(r.details_json),
+    }));
+
+    let triage = null;
+    if (canReadTriage) {
+      const sinceIso = new Date(Date.now() - 24 * 3600e3).toISOString();
+      const bundle = await signedFetch({
+        path: "/Observation",
+        query: `_count=100&_sort=-_lastUpdated&_lastUpdated=ge${encodeURIComponent(
+          sinceIso
+        )}`,
+      });
+
+      const entries = (bundle.entry || [])
+        .map((e) => e.resource)
+        .filter((r) => r?.resourceType === "Observation");
+
+      const counts = { red: 0, orange: 0, yellow: 0 };
+      for (const o of entries) {
+        const text = (o.note || []).map((n) => n?.text || "").join(" ");
+        const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
+        const color = String(m?.[2] || "").toLowerCase();
+        if (!["red", "orange", "yellow"].includes(color)) continue;
+
+        const flagsExt = (o.extension || []).find(
+          (e) => e.url === "http://example.org/triage-flags"
+        );
+        const flags = parseJsonOrNull(flagsExt?.valueString) || {};
+        if (flags.contacted && flags.scheduled) continue;
+
+        counts[color] += 1;
+      }
+
+      triage = {
+        since: sinceIso,
+        counts,
+        openTotal: counts.red + counts.orange + counts.yellow,
+      };
+    }
+
+    res.json({
+      ok: true,
+      provider: {
+        email: req.user?.email || null,
+        status: req.membership?.status || null,
+        roles: req.roles || [],
+        permissions,
+      },
+      summary: {
+        recentAuditCount: recentAudit.length,
+        lastAuditAt: recentAudit[0]?.at || null,
+        triage,
+      },
+      recentAudit,
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.get("/api/audit/my", requireAuth, requireActiveMembership, (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const rows = listMyAudit({ actor_membership_id: req.membership.id, limit });
+    res.json(rows.map(r => ({
+        ...r, details: parseJsonOrNull(r.details_json)
+    })));
+
+});
+app.get("/api/admin/audit", requireAuth, requireActiveMembership, requirePermission("members.manage"), (req, res) => {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+    const rows = listAuditAll({ limit });
+    res.json(rows.map(r => ({ ...r, details: parseJsonOrNull(r.details_json) })));
+});
 /*AWS healthlake code start*/
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
@@ -351,6 +579,96 @@ if (process.env.AWS_PROFILE) {
   providerOptions.profile = process.env.AWS_PROFILE;
 }
 const credentials = fromNodeProviderChain(providerOptions);
+let cognitoSdk = null;
+let cognitoAdminClient = null;
+
+async function getCognitoAdminClient() {
+  if (cognitoAdminClient) return cognitoAdminClient;
+
+  if (!cognitoSdk) {
+    try {
+      cognitoSdk = await import("@aws-sdk/client-cognito-identity-provider");
+    } catch {
+      throw new Error(
+        "Missing dependency @aws-sdk/client-cognito-identity-provider. Run npm install in Backend/healthlakeproxy."
+      );
+    }
+  }
+
+  cognitoAdminClient = new cognitoSdk.CognitoIdentityProviderClient({
+    region: COGNITO_REGION,
+    credentials,
+  });
+  return cognitoAdminClient;
+}
+
+async function sendCognitoInvite({ email, suggestedRole }) {
+  if (!COGNITO_USER_POOL_ID) {
+    throw new Error("COGNITO_USER_POOL_ID is not configured");
+  }
+
+  const emailNormalized = String(email || "").trim().toLowerCase();
+  if (!emailNormalized) throw new Error("email is required");
+
+  const client = await getCognitoAdminClient();
+  const escapedEmail = emailNormalized.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  // When pool is configured with email alias, username must be a separate non-email value.
+  let username = null;
+  const existing = await client.send(
+    new cognitoSdk.ListUsersCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Filter: `email = "${escapedEmail}"`,
+      Limit: 1,
+    })
+  );
+
+  if (Array.isArray(existing?.Users) && existing.Users.length > 0) {
+    username = existing.Users[0]?.Username || null;
+  }
+
+  const isExisting = !!username;
+  if (!username) {
+    const nonce = Math.random().toString(36).slice(2, 8);
+    username = `inv_${Date.now()}_${nonce}`;
+  }
+
+  let inviteResponse = null;
+  inviteResponse = await client.send(
+    new cognitoSdk.AdminCreateUserCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Username: username,
+      UserAttributes: [{ Name: "email", Value: emailNormalized }],
+      DesiredDeliveryMediums: ["EMAIL"],
+      MessageAction: isExisting ? "RESEND" : undefined,
+    })
+  );
+
+  const groupMap = {
+    staff: process.env.COGNITO_GROUP_STAFF || "staff",
+    medical: process.env.COGNITO_GROUP_MEDICAL || "medical",
+    admin: process.env.COGNITO_GROUP_ADMIN || "admin",
+  };
+  const groupName = groupMap[suggestedRole] || groupMap.staff;
+  if (groupName) {
+    await client.send(
+      new cognitoSdk.AdminAddUserToGroupCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: username,
+        GroupName: groupName,
+      })
+    );
+  }
+
+  return {
+    username,
+    group: groupName,
+    email: emailNormalized,
+    delivery:
+      inviteResponse?.CodeDeliveryDetails || inviteResponse?.User?.UserStatus || null,
+    resent: isExisting,
+  };
+}
 
 const signer = new SignatureV4({
   service: "healthlake",
@@ -630,7 +948,7 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-    console.log('[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}');
+      console.log("[INTAKE] Successfully created Observation " + (created?.id || "") + " for patient " + patiendId);;
 
     res.json({
       id: created?.id || null,
@@ -754,7 +1072,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/flags",
-  requireAuth,
+  requireAuth, requireActiveMembership, requirePermission("triage.flag"),
   async (req, res) => {
     try {
       const rawId = req.params.riskId || "";
@@ -800,7 +1118,14 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "triage.flag.update",
+            resource_type: "Observation",
+            resource_id: riskId,
+            details: { updates },
+        });
       res.json({ ok: true, flags });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
@@ -832,12 +1157,12 @@ app.patch(
           .json({ error: "color must be red|orange|yellow" });
       }
 
-      // load Observation
+      // oad Observation
       const obs = await signedFetch({
         path: `/Observation/${encodeURIComponent(riskId)}`,
       });
 
-      // 1) update valueCodeableConcept
+      //update valueCodeableConcept
       obs.valueCodeableConcept = obs.valueCodeableConcept || {};
       obs.valueCodeableConcept.text = color;
       obs.valueCodeableConcept.coding = [
@@ -847,7 +1172,7 @@ app.patch(
         },
       ];
 
-      // 2) update/add "Triage: <color>" note
+      //update/add "Triage: <color>" note
       const notes = obs.note || [];
       const triageNoteIdx = notes.findIndex(
         (n) => typeof n?.text === "string" && /^triage\s*:/i.test(n.text)
@@ -860,7 +1185,7 @@ app.patch(
       }
       obs.note = notes;
 
-      // 3) record override reason in extension
+      //record override reason in extension
       const overrideUrl = "http://example.org/triage-override";
       const exts = obs.extension || [];
       const ts = new Date().toISOString();
@@ -879,7 +1204,14 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "triage.override",
+            resource_type: "Observation",
+            resource_id: riskId,
+            details: { color, reason },
+        });
       res.json({ ok: true, color, override: payload });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
@@ -895,6 +1227,77 @@ app.get(
   requireActiveMembership,
   requirePermission("members.manage"),
   (req, res) => res.json(listPendingMembers())
+);
+
+app.post(
+  "/api/admin/invite",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  async (req, res) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const suggestedRoleRaw = String(req.body?.suggested_role || "staff").trim().toLowerCase();
+      const note = req.body?.note ? String(req.body.note).trim() : null;
+
+      if (!email) return res.status(400).json({ error: "email is required" });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "email format is invalid" });
+      }
+
+      const allowedRoles = new Set(["staff", "medical", "admin"]);
+      if (!allowedRoles.has(suggestedRoleRaw)) {
+        return res.status(400).json({ error: "suggested_role must be staff|medical|admin" });
+      }
+
+      const cognitoInvite = await sendCognitoInvite({
+        email,
+        suggestedRole: suggestedRoleRaw,
+      });
+
+      const invite = createOrRefreshInvite({
+        email,
+        suggested_role: suggestedRoleRaw,
+        note,
+        invited_by_membership_id: req.membership.id,
+        invited_by_user_id: req.userId,
+      });
+
+      logAudit({
+        actor_membership_id: req.membership.id,
+        actor_user_id: req.userId,
+        action: "member.invite",
+        resource_type: "invite",
+        resource_id: String(invite.id),
+        details: {
+          email,
+          suggested_role: suggestedRoleRaw,
+          note: note || null,
+          cognito_username: cognitoInvite.username,
+          cognito_group: cognitoInvite.group,
+        },
+      });
+
+      res.json({ ok: true, invite, cognito: { invited: true, ...cognitoInvite } });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/invites",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const limit = Math.min(300, Math.max(1, Number(req.query.limit || 100)));
+      res.json(listMemberInvites({ limit }));
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
 );
 
 app.post(
@@ -915,7 +1318,14 @@ app.post(
         roleNames: roles,
         approved_by_sub: req.user.sub,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "member.approve",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: {roles},
+        });
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e.message });
@@ -933,7 +1343,15 @@ app.post(
       const { membership_id } = req.body || {};
       if (!membership_id) return res.status(400).json({ error: "membership_id required" });
 
-      disableMember({ membership_id: Number(membership_id) });
+        disableMember({ membership_id: Number(membership_id) });
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "member.disable",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: {},
+        });
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e.message });
