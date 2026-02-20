@@ -485,6 +485,75 @@ html {
     line-height: 1.6;
 }
 
+
 .severity-container strong {
     color: var(--primary-color);
+}
+
+/* Suggestion Chips */
+.suggestion-chips-container {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    /* Smooth scrolling on iOS */
+    margin-bottom: 8px;
+    /* Space above input */
+    scrollbar-width: thin;
+    /* Firefox */
+}
+
+.suggestion-chips-container::-webkit-scrollbar {
+    height: 4px;
+}
+
+.suggestion-chips-container::-webkit-scrollbar-thumb {
+    background-color: #ddd;
+    border-radius: 4px;
+}
+
+.suggestion-chip {
+    background: #eef2ff;
+    color: #4f46e5;
+    border: 1px solid #c7d2fe;
+    padding: 6px 12px;
+    border-radius: 16px;
+    /* Pill shape */
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    /* Prevent shrinking */
+}
+
+.suggestion-chip:hover {
+    background: #e0e7ff;
+    border-color: #a5b4fc;
+    transform: translateY(-1px);
+}
+
+.suggestion-chip:active {
+    background: #c7d2fe;
+    transform: translateY(0);
+}
+
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
+.progress-container {
+    height: 4px;
+    background-color: rgba(0, 0, 0, 0.05);
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--success-gradient);
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(79, 172, 254, 0.5);
 }

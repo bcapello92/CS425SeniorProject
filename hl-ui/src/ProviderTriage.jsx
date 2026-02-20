@@ -367,6 +367,29 @@ export default function ProviderTriage() {
                                                                 </div>
                                                             )}
 
+                                                            {/* 
+                                                            {d.data.symptomStart && (
+                                                                <div style={{ 
+                                                                    marginTop: 8, 
+                                                                    padding: 8, 
+                                                                    background: "#eef2ff", 
+                                                                    borderRadius: 6,
+                                                                    border: "1px solid #c7d2fe",
+                                                                    fontSize: 14
+                                                                }}>
+                                                                    <div style={{ fontWeight: 600, color: "#3730a3", display: "flex", alignItems: "center", gap: 6 }}>
+                                                                        <span>⏰ Symptom Onset</span>
+                                                                    </div>
+                                                                    <div style={{ marginTop: 2 }}>
+                                                                        {d.data.symptomStart.humanReadable} 
+                                                                        <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 6 }}>
+                                                                            ({new Date(d.data.symptomStart.timestamp).toLocaleDateString()})
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )} 
+                                                            */}
+
                                                             <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
                                                                 {/* CONTACTED */}
                                                                 <label style={{ display: "flex", alignItems: "center", gap: 6 }}>

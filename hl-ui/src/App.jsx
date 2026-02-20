@@ -1,6 +1,6 @@
 ﻿// hl-ui/src/App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
-import AppLayout from "./AppLayout.jsx";
+import AppLayout from "./AppLayoutFixed.jsx";
 import PatientChatIntake from "./PatientChatIntake.jsx";
 import ProviderHome from "./ProviderHome.jsx";
 import ProviderTriage from "./ProviderTriage.jsx";

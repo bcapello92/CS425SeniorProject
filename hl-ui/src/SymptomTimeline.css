@@ -1,0 +1,227 @@
+.symptom-timeline-container {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;
+    padding: 24px;
+    margin: 16px 0;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+    color: white;
+}
+
+.timeline-header h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.timeline-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 4px;
+    border-radius: 12px;
+}
+
+.timeline-tabs button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: transparent;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.timeline-tabs button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.timeline-tabs button.active {
+    background: rgba(255, 255, 255, 0.25);
+    font-weight: 600;
+}
+
+.timeline-content {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.timeline-content label {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Today mode - Time picker */
+.time-picker {
+    width: 100%;
+}
+
+.time-inputs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.time-inputs select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 22px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.time-inputs select option {
+    background: #764ba2;
+    color: white;
+}
+
+/* Yesterday mode - Time of day */
+.time-of-day-picker {
+    width: 100%;
+}
+
+.time-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.time-buttons button {
+    padding: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.time-buttons button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.time-buttons button.active {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: white;
+    font-weight: 600;
+}
+
+/* Week mode - Day picker */
+.week-picker {
+    width: 100%;
+}
+
+.day-buttons {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+
+.day-buttons button {
+    padding: 12px 4px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.day-buttons button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.day-buttons button.active {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: white;
+    font-weight: 600;
+}
+
+/* Longer mode - Date picker */
+.date-picker {
+    width: 100%;
+}
+
+.date-picker input[type="date"] {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.date-picker input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+}
+
+/* Action buttons */
+.timeline-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.timeline-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cancel-btn {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.submit-btn {
+    background: white;
+    color: #667eea;
+}
+
+.submit-btn:hover:not(:disabled) {
+    background: #f0f0f0;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -1,15 +1,63 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 import ChatMessage from "./ChatMessage.jsx";
 import ChatInput from "./ChatInput.jsx";
+import SymptomTimeline from "./SymptomTimeline.jsx";
+import SuggestionChips from "./SuggestionChips.jsx";
 import { triageClient } from "./triageClient";
 import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript } from "./ChatbotLogic";
 import "./Chatbot.css";
 
 /*Wiem original code start*/
-const BOT_GREETING =
-  "👋 Hi! I’m your ENT assistant. Tell me what’s going on and I’ll ask a few follow-ups.";
+
+// Translation dictionary for UI text
+const translations = {
+  en: {
+    greeting: "If this is a medical emergency, please call 911 immediately⚠️. Hi! I'm your ENT assistant. Tell me what's going on and I'll ask a few follow-ups to help our medical team understand your situation.",
+    entLocation: "Before we begin, could you tell me: Is this mainly in your ear, nose/sinuses, throat/neck, or elsewhere?",
+    enterCode: "Enter your Intake Code or Patient ID:",
+    codePlaceholder: "e.g. 12345 or ABCD-123",
+    consentText: "I consent to share my responses for care.",
+    beginChat: "Begin Chat",
+    startAnother: "Start another intake",
+    languageLabel: "Language / Idioma",
+    inputPlaceholder: "Type your symptoms...",
+    sendButton: "Send",
+    // Triage result messages
+    triageSevere: "severe",
+    triageUrgent: "urgent",
+    triageRoutine: "routine",
+    triageClassified: "Based on your conversation, your case is classified as",
+    triageReasoning: "Reasoning:",
+    triageNoRationale: "No rationale provided.",
+    triageError: "Sorry, I couldn't submit for triage. Please try again."
+  },
+  es: {
+    greeting: "Si esto es una emergencia médica, llame al 911 inmediatamente⚠️. ¡Hola! Soy su asistente de ORL. Dígame qué está pasando y haré algunas preguntas para ayudar a nuestro equipo médico a entender su situación.",
+    entLocation: "Antes de comenzar, ¿podría decirme: esto ocurre principalmente en el oído, la nariz/senos paranasales, la garganta/cuello o en otra parte?",
+    enterCode: "Ingrese su código de ingreso o ID de paciente:",
+    codePlaceholder: "ej. 12345 o ABCD-123",
+    consentText: "Doy mi consentimiento para compartir mis respuestas para atención médica.",
+    beginChat: "Comenzar Chat",
+    startAnother: "Iniciar otra consulta",
+    languageLabel: "Language / Idioma",
+    inputPlaceholder: "Escriba sus síntomas...",
+    sendButton: "Enviar",
+    // Triage result messages
+    triageSevere: "severo",
+    triageUrgent: "urgente",
+    triageRoutine: "rutinario",
+    triageClassified: "Según su conversación, su caso está clasificado como",
+    triageReasoning: "Razonamiento:",
+    triageNoRationale: "No se proporcionó razonamiento.",
+    triageError: "Lo siento, no pude enviar para triaje. Por favor intente de nuevo."
+  }
+};
 
 export default function PatientChatIntake() {
+  // ---------- language ----------
+  const [language, setLanguage] = useState('en'); // 'en' or 'es'
+  const t = translations[language]; // translation helper
+
   // ---------- patient + consent ----------
   const [entryId, setEntryId] = useState("");
   const [patientId, setPatientId] = useState(null);
@@ -19,11 +67,13 @@ export default function PatientChatIntake() {
   const getTimestamp = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // ---------- chat state ----------
-  const [messages, setMessages] = useState([
-    { sender: "bot", text: BOT_GREETING, timestamp: getTimestamp() },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef(null);
+
+  // ---------- timeline state ----------
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [symptomOnset, setSymptomOnset] = useState(null);
 
   // ---------- triage state ----------
   const [submitting, setSubmitting] = useState(false);
@@ -40,12 +90,37 @@ export default function PatientChatIntake() {
     setEntryId("");
     setPatientId(null);
     setConsented(false);
-    setMessages([{ sender: "bot", text: BOT_GREETING, timestamp: getTimestamp() }]);
+    const ts = getTimestamp();
+    setMessages([
+      { sender: "bot", text: `${t.greeting}`, timestamp: ts },
+      { sender: "bot", text: t.entLocation, timestamp: ts },
+    ]);
     setIsTyping(false);
     setSubmitting(false);
     setResult(null);
     setError(null);
   }
+
+  // ---------- Timeline handlers ----------
+  const handleTimelineSelect = ({ timestamp, humanReadable, mode }) => {
+    setSymptomOnset({ timestamp, humanReadable, mode });
+    setShowTimeline(false);
+
+    // Add the selected timeline as a user message
+    const timelineMessage = {
+      sender: "user",
+      text: humanReadable,
+      timestamp: getTimestamp(),
+      metadata: { symptomOnset: timestamp }
+    };
+
+    // Continue the conversation with the timeline data
+    handleUserMessage(humanReadable);
+  };
+
+  const handleTimelineCancel = () => {
+    setShowTimeline(false);
+  };
 
   // ---------- Chat send ----------
   const handleUserMessage = (userInput) => {
@@ -57,7 +132,9 @@ export default function PatientChatIntake() {
       setMessages,
       setIsTyping,
       completeConversation: sendForTriage,
-      getTimestamp
+      setShowTimeline,
+      getTimestamp,
+      language // Pass language to backend
     });
   };
 
@@ -75,31 +152,37 @@ export default function PatientChatIntake() {
     const answers = [];
 
     // add a visible status message
+    const sendingMessage = language === 'es'
+      ? "✅ Enviando esta conversación para triaje..."
+      : "✅ Sending this conversation for triage...";
     setMessages((prev) => [
       ...prev,
-      { sender: "bot", text: "✅ Sending this conversation for triage..." },
+      { sender: "bot", text: sendingMessage },
     ]);
 
     try {
       const data = await triageClient.submitIntake({
         patientId,
         answers,
-        transcript,
+        transcript: buildTranscript(messages), // Pass the structured timeline data
+        symptomOnset
       });
 
       setResult(data);
 
+      // Don't show triage classification to patients
+      /*
       const triageColor = String(data.color || "").toLowerCase();
-      let triageLabel = "routine";
+      let triageLabel = t.triageRoutine;
       let severityClass = "non-urgent";
       let emoji = "✅";
 
       if (triageColor === "red") {
-        triageLabel = "severe";
+        triageLabel = t.triageSevere;
         severityClass = "emergency";
         emoji = "🚨";
       } else if (triageColor === "orange") {
-        triageLabel = "urgent";
+        triageLabel = t.triageUrgent;
         severityClass = "semi-urgent";
         emoji = "⚠️";
       }
@@ -109,19 +192,20 @@ export default function PatientChatIntake() {
           <button class="severity-btn ${severityClass}">
             ${emoji} ${triageLabel.charAt(0).toUpperCase() + triageLabel.slice(1)}
           </button>
-          <p>Based on your conversation, your case is classified as <strong>${triageLabel}</strong>.</p>
-          <p><strong>Reasoning:</strong> ${data.rationale || "No rationale provided."}</p>
+          <p>${t.triageClassified} <strong>${triageLabel}</strong>.</p>
+          <p><strong>${t.triageReasoning}</strong> ${data.rationale || t.triageNoRationale}</p>
         </div>
       `;
 
       setMessages((prev) => [...prev, { sender: "bot", text: botReply, isHTML: true }]);
+      */
     } catch (err) {
       setError(err?.message || "Failed to submit for triage.");
       setMessages((prev) => [
         ...prev,
         {
           sender: "bot",
-          text: "❌ Sorry, I couldn't submit for triage. Please try again.",
+          text: `❌ ${t.triageError}`,
         },
       ]);
     } finally {
@@ -142,13 +226,44 @@ export default function PatientChatIntake() {
       {/* Start screen */}
       {!hasStartedChat && !result && (
         <div style={card}>
+          {/* Language Toggle */}
+          <div style={{ marginBottom: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: '0.9rem', marginBottom: 8, color: '#666' }}>
+              {t.languageLabel}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button
+                onClick={() => setLanguage('en')}
+                style={{
+                  ...buttonPrimary,
+                  backgroundColor: language === 'en' ? '#4a90e2' : '#ccc',
+                  padding: '8px 16px',
+                  fontSize: '0.9rem'
+                }}
+              >
+                English
+              </button>
+              <button
+                onClick={() => setLanguage('es')}
+                style={{
+                  ...buttonPrimary,
+                  backgroundColor: language === 'es' ? '#4a90e2' : '#ccc',
+                  padding: '8px 16px',
+                  fontSize: '0.9rem'
+                }}
+              >
+                Español
+              </button>
+            </div>
+          </div>
+
           <div style={{ marginBottom: 8 }}>
-            Enter your Intake Code or Patient ID:
+            {t.enterCode}
           </div>
           <input
             value={entryId}
             onChange={(e) => setEntryId(e.target.value)}
-            placeholder="e.g. 12345 or ABCD-123"
+            placeholder={t.codePlaceholder}
             style={inputStyle}
           />
           <label style={{ display: "block", marginTop: 10 }}>
@@ -157,14 +272,21 @@ export default function PatientChatIntake() {
               checked={consented}
               onChange={(e) => setConsented(e.target.checked)}
             />{" "}
-            I consent to share my responses for care.
+            {t.consentText}
           </label>
           <button
             disabled={!entryId.trim() || !consented}
-            onClick={() => setPatientId(entryId.trim())}
+            onClick={() => {
+              setPatientId(entryId.trim());
+              const ts = getTimestamp();
+              setMessages([
+                { sender: "bot", text: t.greeting, timestamp: ts },
+                { sender: "bot", text: t.entLocation, timestamp: ts },
+              ]);
+            }}
             style={buttonPrimary}
           >
-            Begin Chat
+            {t.beginChat}
           </button>
         </div>
       )}
@@ -190,6 +312,16 @@ export default function PatientChatIntake() {
                 <span className="dot"></span>
               </div>
             )}
+
+            {/* Timeline Picker */}
+            {showTimeline && !result && (
+              <SymptomTimeline
+                onSelect={handleTimelineSelect}
+                onCancel={handleTimelineCancel}
+                language={language}
+              />
+            )}
+
             <div ref={bottomRef}></div>
           </div>
 
@@ -199,52 +331,62 @@ export default function PatientChatIntake() {
           {result && (
             <div style={{ padding: "16px 24px", background: "rgba(255,255,255,0.9)", textAlign: "center" }}>
               <button onClick={resetAll} style={buttonSecondary}>
-                Start another intake
+                {t.startAnother}
               </button>
             </div>
           )}
 
           {/* Only show input when triage not complete */}
           {!result && (
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <div style={{ flex: 1 }}>
-                <ChatInput onSend={handleUserMessage} />
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", marginTop: 10 }}>
+              {/* Suggestion Chips */}
+              {messages.length > 0 && messages[messages.length - 1].sender === "bot" && (
+                <SuggestionChips
+                  suggestions={messages[messages.length - 1].suggestions}
+                  onSelect={handleUserMessage}
+                />
+              )}
 
-              {/* <button
-              onClick={sendForTriage}
-              disabled={!canSendForTriage}
-              style={{
-                ...buttonPrimary,
-                height: 44,
-                alignSelf: "flex-end",
-                opacity: canSendForTriage ? 1 : 0.5,
-              }}
-              title={
-                userMessageCount < 2
-                  ? "Have a short conversation first (at least 2 patient messages)."
-                  : ""
-              }
-            >
-              {submitting ? "Sending…" : "Send for Triage"}
-            </button> */}
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <ChatInput
+                    onSend={handleUserMessage}
+                    placeholder={t.inputPlaceholder}
+                    buttonText={t.sendButton}
+                  />
+                </div>
+
+                {/* <button
+                  onClick={sendForTriage}
+                  disabled={!canSendForTriage}
+                  style={{
+                    ...buttonPrimary,
+                    height: 44,
+                    alignSelf: "flex-end",
+                    opacity: canSendForTriage ? 1 : 0.5,
+                  }}
+                  title={
+                    userMessageCount < 2
+                      ? "Have a short conversation first (at least 2 patient messages)."
+                      : ""
+                  }
+                >
+                  {submitting ? "Sending…" : "Send for Triage"}
+                </button> */}
+              </div>
             </div>
           )}
         </>
       )}
 
-      {/* After triage */}
-      {/* {result && (
-        <div style={{ marginTop: 16 }}>
-          <button onClick={resetAll} style={buttonSecondary}>
-            Start another intake
-          </button>
-        </div>
-      )} */}
+      {/* Footer / Copyright */}
+
     </div>
   );
 }
 /*Wiem code end*/
+
+// Simple styles
 const card = {
   margin: "16px",
   padding: 16,

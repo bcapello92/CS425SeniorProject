@@ -11,7 +11,7 @@ const CHAT_BASE =
 
 class TriageClient {
   async _request(path, { method = "GET", body } = {}) {
-    
+
 
     const headers = {};
     if (body) {
@@ -41,10 +41,10 @@ class TriageClient {
 
   // ---------- EXISTING TRIAGE METHODS ----------
 
-  async submitIntake({ patientId, answers, transcript }) {
+  async submitIntake({ patientId, answers, transcript, symptomOnset }) {
     return this._request("/api/intake", {
       method: "POST",
-      body: { patientId, answers, transcript },
+      body: { patientId, answers, transcript, symptomOnset },
     });
   }
 

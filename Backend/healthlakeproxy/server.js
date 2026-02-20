@@ -401,7 +401,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
 // ---------------------------------------------------------
 app.post("/api/intake", async (req, res) => {
   try {
-    const { patientId, answers = [], transcript = "" } = req.body || {};
+    const { patientId, answers = [], transcript = "", symptomOnset = null } = req.body || {};
     console.log(`[INTAKE] Received request for patientId: ${patientId}`);
 
     if (!patientId || typeof patientId !== "string") {
@@ -455,6 +455,11 @@ app.post("/api/intake", async (req, res) => {
         { text: `Transcript:\n${transcript}` },
       ],
       extension: [
+
+        {
+          url: "http://example.org/symptom-onset",
+          valueString: symptomOnset ? JSON.stringify(symptomOnset) : null,
+        },
         {
           url: "http://example.org/triage-answers",
           valueString: JSON.stringify(answers),
@@ -569,6 +574,19 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
       }
     }
 
+    // --- symptom onset ---
+    let symptomStart = null;
+    const onsetExt = (obs.extension || []).find(
+      (e) => e.url === "http://example.org/symptom-onset"
+    );
+    if (onsetExt?.valueString) {
+      try {
+        symptomStart = JSON.parse(onsetExt.valueString);
+      } catch {
+        // ignore
+      }
+    }
+
     res.json({
       id: obs.id,
       date:
@@ -579,6 +597,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
       color: color || null,
       rationale: rationale || null,
       answers,
+      symptomStart,
       patient,
       flags,
     });

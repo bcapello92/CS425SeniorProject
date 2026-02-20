@@ -2,12 +2,36 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
+from contextlib import asynccontextmanager
 import uvicorn
 import os
 
 from ollama_client import call_llm_api
 
-app = FastAPI(title="Ollama Conversation API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-warm the Ollama model on startup to avoid slow first requests"""
+    print("\n" + "="*50)
+    print("Pre-warming Ollama model...")
+    print("="*50)
+    
+    try:
+        # Make a dummy request to load the model into memory
+        warmup_messages = [{"role": "user", "content": "hi"}]
+        await call_llm_api(warmup_messages)
+        print("Model loaded and ready!")
+        print("="*50 + "\n")
+    except Exception as e:
+        print(f"Warning: Could not pre-warm model: {e}")
+        print("Model will load on first patient request (may be slow)")
+        print("="*50 + "\n")
+    
+    yield
+    
+    # Cleanup (if needed)
+    print("Shutting down Ollama service...")
+
+app = FastAPI(title="Ollama Conversation API", lifespan=lifespan)
 
 # CORS middleware for frontend access
 app.add_middleware(
@@ -24,6 +48,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
+    language: Optional[str] = 'en'  # New: language parameter for Spanish support
 
 class ChatResponse(BaseModel):
     reply: str
@@ -37,7 +62,7 @@ async def chat(request: ChatRequest):
         # Convert pydantic models to dicts for the client
         messages_dict = [{"role": m.role, "content": m.content} for m in request.messages]
         
-        reply = await call_llm_api(messages_dict)
+        reply = await call_llm_api(messages_dict, language=request.language)
         return ChatResponse(reply=reply)
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
