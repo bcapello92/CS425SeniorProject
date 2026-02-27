@@ -23,10 +23,11 @@ llama32_ent_triage_cls_lora_predictions_tau0_6.csv
 
 # misc
 .DS_Store
+__pycache__/
+*.pyc
 
 .env*
 
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# models
+slm-finetuned-adapter/
+llama32_ent_triage_cls_lora_merged

@@ -80,6 +80,10 @@ export default function PatientChatIntake() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // ---------- editing state ----------
+  const [editingValue, setEditingValue] = useState(undefined);
+  const inputRef = useRef(null);
+
   const hasStartedChat = patientId !== null;
 
   useEffect(() => {
@@ -124,6 +128,9 @@ export default function PatientChatIntake() {
 
   // ---------- Chat send ----------
   const handleUserMessage = (userInput) => {
+    // Reset editing value if we were editing
+    setEditingValue(undefined);
+
     sharedHandleUserMessage({
       userInput,
       patientId,
@@ -136,6 +143,22 @@ export default function PatientChatIntake() {
       getTimestamp,
       language // Pass language to backend
     });
+  };
+
+  const handleEditMessage = (index) => {
+    const msg = messages[index];
+    if (!msg || msg.sender !== "user") return;
+
+    // 1. Set the input value to the message being edited
+    setEditingValue(msg.text);
+
+    // 2. Truncate the messages array to remove everything from this message onwards
+    setMessages((prev) => prev.slice(0, index));
+
+    // 3. Focus the input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
   };
 
   // ---------- Send chat transcript for triage ----------
@@ -302,6 +325,7 @@ export default function PatientChatIntake() {
                 text={msg.text}
                 isHTML={msg.isHTML}
                 timestamp={msg.timestamp}
+                onEdit={msg.sender === "user" ? () => handleEditMessage(index) : null}
               />
             ))}
 
@@ -353,6 +377,8 @@ export default function PatientChatIntake() {
                     onSend={handleUserMessage}
                     placeholder={t.inputPlaceholder}
                     buttonText={t.sendButton}
+                    externalValue={editingValue}
+                    inputRef={inputRef}
                   />
                 </div>
 

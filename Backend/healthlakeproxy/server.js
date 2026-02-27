@@ -455,11 +455,14 @@ app.post("/api/intake", async (req, res) => {
         { text: `Transcript:\n${transcript}` },
       ],
       extension: [
-
-        {
-          url: "http://example.org/symptom-onset",
-          valueString: symptomOnset ? JSON.stringify(symptomOnset) : null,
-        },
+        ...(symptomOnset
+          ? [
+            {
+              url: "http://example.org/symptom-onset",
+              valueString: JSON.stringify(symptomOnset),
+            },
+          ]
+          : []),
         {
           url: "http://example.org/triage-answers",
           valueString: JSON.stringify(answers),

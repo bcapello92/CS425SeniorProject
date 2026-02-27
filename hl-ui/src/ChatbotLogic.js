@@ -68,20 +68,24 @@ export const handleUserMessage = async ({
         // Detect if we should show timeline picker (English and Spanish)
         if (setShowTimeline && displayText) {
             const lowerText = displayText.toLowerCase();
-            const shouldShowTimeline =
+            const keywordMatch =
                 // English phrases
-                (lowerText.includes("when") && lowerText.includes("start")) ||
-                (lowerText.includes("when") && lowerText.includes("begin")) ||
+                (lowerText.includes("when") && (lowerText.includes("start") || lowerText.includes("begin") || lowerText.includes("onset"))) ||
                 lowerText.includes("how long") ||
+                lowerText.includes("how many days") ||
+                lowerText.includes("duration") ||
+                lowerText.includes("since when") ||
                 // Spanish phrases
-                (lowerText.includes("cuándo") && lowerText.includes("comenzó")) ||
-                (lowerText.includes("cuando") && lowerText.includes("comenzo")) || // without accent
-                (lowerText.includes("cuándo") && lowerText.includes("empezó")) ||
-                (lowerText.includes("cuando") && lowerText.includes("empezo")) || // without accent
+                (lowerText.includes("cuándo") && (lowerText.includes("comenzó") || lowerText.includes("empezó") || lowerText.includes("inicio") || lowerText.includes("apareció"))) ||
+                (lowerText.includes("cuando") && (lowerText.includes("comenzo") || lowerText.includes("empezo") || lowerText.includes("aparecio"))) || // without accent
                 lowerText.includes("cuánto tiempo") ||
-                lowerText.includes("cuanto tiempo");
+                lowerText.includes("cuanto tiempo") ||
+                lowerText.includes("hace cuánto") ||
+                lowerText.includes("hace cuanto") ||
+                lowerText.includes("desde cuándo") ||
+                lowerText.includes("desde cuando");
 
-            if (shouldShowTimeline) {
+            if (keywordMatch) {
                 setShowTimeline(true);
             }
         }
@@ -130,9 +134,18 @@ export const getSmartSuggestions = (text, language = 'en') => {
 
     const isSpanish = language === 'es';
 
-    // Yes/No questions
-    if (lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") ||
-        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido")) {
+    // 1) Explicit Yes/No requests (like red flag screening)
+    if (lower.includes("(yes/no)") || lower.includes("(sí/no)") || lower.includes("(si/no)")) {
+        return isSpanish
+            ? ["Sí", "No", "No estoy seguro/a"]
+            : ["Yes", "No", "Not sure"];
+    }
+
+    // 2) General Yes/No questions
+    if (
+        lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") ||
+        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido") || lower.includes("está ") || lower.includes("esta ")
+    ) {
         suggestions.push(
             isSpanish ? "Sí" : "Yes",
             isSpanish ? "No" : "No",
