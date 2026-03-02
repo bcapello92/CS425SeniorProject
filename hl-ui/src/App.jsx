@@ -4,6 +4,7 @@ import AppLayout from "./AppLayout.jsx";
 import PatientChatIntake from "./PatientChatIntake.jsx";
 import ProviderHome from "./ProviderHome.jsx";
 import ProviderTriage from "./ProviderTriage.jsx";
+import ProviderSchedule from "./ProviderSchedule.jsx";
 import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
 import ProviderAccount from "./ProviderAccount.jsx"
@@ -57,6 +58,14 @@ export default function App() {
           element={
             <Protected>
               <ProviderTriage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/provider/schedule"
+          element={
+            <Protected>
+              <ProviderSchedule />
             </Protected>
           }
         />

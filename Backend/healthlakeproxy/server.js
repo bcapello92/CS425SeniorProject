@@ -353,6 +353,19 @@ function parseJsonOrNull(value) {
   }
 }
 
+function normalizeTriageFlags(flags) {
+  const base = flags && typeof flags === "object" ? flags : {};
+  const bulk = base.bulk && typeof base.bulk === "object" ? base.bulk : {};
+  return { ...base, ...bulk };
+}
+
+function readTriageFlagsFromObservation(obs) {
+  const flagsExt = (obs?.extension || []).find(
+    (e) => e.url === "http://example.org/triage-flags"
+  );
+  return normalizeTriageFlags(parseJsonOrNull(flagsExt?.valueString) || {});
+}
+
 app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
     const user = getUserById(req.userId);
     res.json({
@@ -510,10 +523,7 @@ app.get("/api/provider/home", requireAuth, requireActiveMembership, async (req, 
         const color = String(m?.[2] || "").toLowerCase();
         if (!["red", "orange", "yellow"].includes(color)) continue;
 
-        const flagsExt = (o.extension || []).find(
-          (e) => e.url === "http://example.org/triage-flags"
-        );
-        const flags = parseJsonOrNull(flagsExt?.valueString) || {};
+        const flags = readTriageFlagsFromObservation(o);
         if (flags.contacted && flags.scheduled) continue;
 
         counts[color] += 1;
@@ -830,17 +840,7 @@ app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermiss
       }
 
       //read triage-flags extension ----
-      let flags = {};
-      const flagsExt = (o.extension || []).find(
-        (e) => e.url === "http://example.org/triage-flags"
-      );
-      if (flagsExt?.valueString) {
-        try {
-          flags = JSON.parse(flagsExt.valueString);
-        } catch {
-          flags = {};
-        }
-      }
+      const flags = readTriageFlagsFromObservation(o);
 
       // If both contacted & scheduled are true, SKIP this case entirely
       if (flags.contacted && flags.scheduled) {
@@ -948,7 +948,12 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-      console.log("[INTAKE] Successfully created Observation " + (created?.id || "") + " for patient " + patiendId);;
+    console.log(
+      "[INTAKE] Successfully created Observation " +
+        (created?.id || "") +
+        " for patient " +
+        patientId
+    );
 
     res.json({
       id: created?.id || null,
@@ -1014,17 +1019,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     }
 
     // --- flags ---
-    let flags = {};
-    const flagsExt = (obs.extension || []).find(
-      (e) => e.url === "http://example.org/triage-flags"
-    );
-    if (flagsExt?.valueString) {
-      try {
-        flags = JSON.parse(flagsExt.valueString);
-      } catch {
-        // ignore
-      }
-    }
+    const flags = readTriageFlagsFromObservation(obs);
 
     // --- patient info (non-fatal) ---
     let patient = null;
@@ -1067,6 +1062,116 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/provider/schedule-week",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const rawStart = String(req.query.start || "").trim();
+      const startDate = rawStart ? new Date(`${rawStart}T00:00:00`) : new Date();
+      if (Number.isNaN(startDate.getTime())) {
+        return res.status(400).json({ error: "start must be a valid YYYY-MM-DD date" });
+      }
+
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+
+      const bundle = await signedFetch({
+        path: "/Observation",
+        query: "_count=100&_sort=-_lastUpdated",
+      });
+
+      const entries = (bundle.entry || [])
+        .map((e) => e.resource)
+        .filter((r) => r?.resourceType === "Observation");
+
+      const appointments = [];
+
+      for (const obs of entries) {
+        const flags = readTriageFlagsFromObservation(obs);
+        const appointmentAt = flags?.appointmentAt;
+        if (!flags?.scheduled || !appointmentAt) continue;
+
+        const apptDate = new Date(appointmentAt);
+        if (Number.isNaN(apptDate.getTime())) continue;
+        if (apptDate < start || apptDate >= end) continue;
+
+        let color =
+          obs?.valueCodeableConcept?.text ||
+          obs?.valueCodeableConcept?.coding?.[0]?.code ||
+          "";
+        color = String(color || "").toLowerCase();
+        if (!["red", "orange", "yellow"].includes(color)) {
+          const noteText = (obs.note || []).map((n) => n?.text || "").join(" ");
+          const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(noteText);
+          color = String(match?.[2] || "yellow").toLowerCase();
+        }
+
+        const patientId = obs.subject?.reference?.replace(/^Patient\//, "") || "unknown";
+        const patientName = obs.subject?.display || `Patient ${patientId}`;
+
+        appointments.push({
+          riskId: obs.id,
+          patientId,
+          patientName,
+          appointmentAt: apptDate.toISOString(),
+          color,
+          contacted: !!flags?.contacted,
+          scheduled: !!flags?.scheduled,
+          contactMethod: flags?.contactMethod || null,
+          sourceDate:
+            obs.effectiveDateTime ||
+            obs.issued ||
+            obs.meta?.lastUpdated ||
+            null,
+        });
+      }
+
+      appointments.sort((a, b) => {
+        const diff =
+          new Date(a.appointmentAt).getTime() - new Date(b.appointmentAt).getTime();
+        if (diff !== 0) return diff;
+        return String(a.patientName || "").localeCompare(String(b.patientName || ""));
+      });
+
+      const days = [];
+      for (let i = 0; i < 7; i += 1) {
+        const dayDate = new Date(start);
+        dayDate.setDate(start.getDate() + i);
+        const dateKey = dayDate.toISOString().slice(0, 10);
+        days.push({
+          date: dateKey,
+          label: dayDate.toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          }),
+          appointments: appointments.filter(
+            (item) => item.appointmentAt.slice(0, 10) === dateKey
+          ),
+        });
+      }
+
+      res.json({
+        ok: true,
+        range: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        total: appointments.length,
+        appointments,
+        days,
+      });
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.message });
+    }
+  }
+);
+
 // ---------------------------------------------------------
 // FLAGS (contacted/scheduled etc.) – PROTECTED
 // ---------------------------------------------------------
@@ -1081,7 +1186,9 @@ app.patch(
         return res.status(400).json({ error: "riskId is required" });
       }
 
-      const updates = req.body || {};
+      const body = req.body || {};
+      const updates =
+        body?.bulk && typeof body.bulk === "object" ? body.bulk : body;
       if (!updates || typeof updates !== "object") {
         return res.status(400).json({ error: "flags payload required" });
       }
@@ -1097,14 +1204,10 @@ app.patch(
       const existing = exts.find((e) => e.url === url);
 
       if (existing?.valueString) {
-        try {
-          flags = JSON.parse(existing.valueString);
-        } catch {
-          flags = {};
-        }
+        flags = parseJsonOrNull(existing.valueString) || {};
       }
 
-      flags = { ...flags, ...updates };
+      flags = { ...normalizeTriageFlags(flags), ...updates };
 
       if (existing) {
         existing.valueString = JSON.stringify(flags);
