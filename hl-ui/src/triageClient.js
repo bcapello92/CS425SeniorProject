@@ -51,12 +51,23 @@ class TriageClient {
         );
     }
 
-    async setFlag(riskId, key, value) {
+    async getScheduleWeek({ start }) {
+        return this._request(
+            `/api/provider/schedule-week?start=${encodeURIComponent(start)}`
+        );
+    }
+
+    async setFlag(riskId, keyOrUpdates, value) {
+        const body =
+            keyOrUpdates && typeof keyOrUpdates === "object" && value === undefined
+                ? keyOrUpdates
+                : { [keyOrUpdates]: value };
+
         return this._request(
             `/api/triage-cases/${encodeURIComponent(riskId)}/flags`,
             {
                 method: "PATCH",
-                body: { [key]: value },
+                body,
             }
         );
     }

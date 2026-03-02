@@ -8,17 +8,55 @@ import { HttpRequest } from "@smithy/protocol-http";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
+import cookieParser from "cookie-parser";
+import {
+  upsertUserAndMembership,
+  getUserById,
+  updateUserDisplayName,
+  disableSelfAccount,
+  getMembershipWithPermissions,
+  listPendingMembers,
+  approveMember,
+  disableMember,
+  createRole,
+  deleteRole,
+  setRolePermissions,
+  listRoles,
+  listPermissions,
+  createOrRefreshInvite,
+  listMemberInvites,
+  logAudit,
+    listMyAudit,
+   listAuditAll
+} from "./rbac_db.js";
 
-// ---------------------------------------------------------
-// INITIALIZE APP
-// ---------------------------------------------------------
 const app = express();
-app.use(cors({ origin: ["http://localhost:5173"] }));
+app.use(cors({ origin: ["http://localhost:5173"], 
+credentials: true,
+}));
 app.use(express.json());
+app.use(cookieParser());
 
-//triage model call
+
+//logout
+app.post("/api/auth/logout", (req, res) => {
+    const secure=process.env.NODE_ENV==="production";
+
+    res.clearCookie("access_token", {
+    path: "/",
+    sameSite: "lax",
+    secure,
+  });
+
+  res.clearCookie("refresh_token", {
+    path: "/",
+    sameSite: "lax",
+    secure,
+  });
+    return res.status(200).json({ok:true});
+});
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
-const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:8002";
+const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
     patientId,
@@ -150,25 +188,387 @@ function verifyToken(token) {
   });
 }
 //AWS ccode end
+app.post("/api/auth/exchange", async (req, res) => {
+    try {
+        const { code, code_verifier } = req.body || {};
+        if (!code || !code_verifier) {
+            return res.status(400).json({ error: "code and code_verifier required" });
+        }
 
+        const domainRaw = (process.env.COGNITO_DOMAIN || "").trim();
+        if (!domainRaw) {
+            return res.status(500).json({ error: "Missing COGNITO_DOMAIN env var" });
+        }
+
+        // Ensure it has https:// and no trailing slash
+        const domain = domainRaw.replace(/\/$/, "");
+        if (!/^https?:\/\//i.test(domain)) {
+            return res
+                .status(500)
+                .json({ error: "COGNITO_DOMAIN must include https:// (full URL)" });
+        }
+
+        const clientId = (process.env.COGNITO_CLIENT_ID || "").trim();
+        const redirectUri = (process.env.COGNITO_REDIRECT_URI || "").trim();
+        if (!clientId || !redirectUri) {
+            return res.status(500).json({
+                error: "Missing COGNITO_CLIENT_ID or COGNITO_REDIRECT_URI env var",
+            });
+        }
+
+        const tokenUrl = `${domain}/oauth2/token`;
+
+        const body = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: clientId,
+            code,
+            redirect_uri: redirectUri,
+            code_verifier,
+        });
+
+        const resp = await fetch(tokenUrl, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+        });
+
+        const text = await resp.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch { }
+
+        if (!resp.ok) {
+            return res
+                .status(resp.status)
+                .json({ error: data?.error_description || data?.error || text });
+        }
+
+        const secure = process.env.NODE_ENV === "production";
+        res.cookie("access_token", data.access_token, {
+            httpOnly: true,
+            secure,
+            sameSite: "lax",
+            path: "/",
+            maxAge: (data.expires_in || 3600) * 1000,
+        });
+
+        if (data.refresh_token) {
+            res.cookie("refresh_token", data.refresh_token, {
+                httpOnly: true,
+                secure,
+                sameSite: "lax",
+                path: "/",
+            });
+        }
+
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e?.message || String(e) });
+    }
+});
 // Express middleware to require Cognito login
 async function requireAuth(req, res, next) {
   try {
-    const auth = req.headers.authorization || "";
-    const [, token] = auth.split(" ");
+    let token = null;
 
-    if (!token) {
-      return res.status(401).json({ error: "Missing bearer token" });
-    }
+    const auth = req.headers.authorization || "";
+    const [, bearer] = auth.split(" ");
+    if (bearer) token = bearer;
+
+    // fallback: cookie
+    if (!token && req.cookies?.access_token) token = req.cookies.access_token;
+
+    if (!token) return res.status(401).json({ error: "Missing token" });
 
     const decoded = await verifyToken(token);
     req.user = decoded;
     next();
   } catch (e) {
-    console.error("[AUTH ERROR]", e.message || e);
     return res.status(401).json({ error: "Invalid or missing token" });
   }
 }
+
+app.get("/api/me", requireAuth, (req, res) => {
+  try {
+    const sub = req.user?.sub;
+    const email = req.user?.email || null;
+
+  const { membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+  const loaded = getMembershipWithPermissions(membership.id);
+  const user = getUserById(membership.user_id);
+
+  res.json({
+    ok: true,
+    sub,
+    email,
+    displayName: user?.display_name || null,
+    status: loaded.membership.status,
+    roles: loaded.roles,
+    permissions: loaded.permissions,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function requireActiveMembership(req, res, next) {
+  try {
+    const sub = req.user?.sub;
+    const email = req.user?.email || null;
+
+    const { user, membership } = upsertUserAndMembership({ cognito_sub: sub, email });
+    req.userId = user.id;
+    const loaded = getMembershipWithPermissions(membership.id);
+
+    req.membership = loaded.membership;
+    req.roles = loaded.roles;
+    req.permissions = new Set(loaded.permissions);
+
+    if (req.membership.status !== "active") {
+      return res.status(403).json({ error: `Account ${req.membership.status}.` });
+    }
+
+    next();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+function requirePermission(key) {
+  return (req, res, next) => {
+    if (!req.permissions?.has(key)) {
+      return res.status(403).json({ error: `Missing permission: ${key}` });
+    }
+    next();
+  };
+}
+
+function parseJsonOrNull(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTriageFlags(flags) {
+  const base = flags && typeof flags === "object" ? flags : {};
+  const bulk = base.bulk && typeof base.bulk === "object" ? base.bulk : {};
+  return { ...base, ...bulk };
+}
+
+function readTriageFlagsFromObservation(obs) {
+  const flagsExt = (obs?.extension || []).find(
+    (e) => e.url === "http://example.org/triage-flags"
+  );
+  return normalizeTriageFlags(parseJsonOrNull(flagsExt?.valueString) || {});
+}
+
+app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
+    const user = getUserById(req.userId);
+    res.json({
+        ok: true,
+        email: req.user?.email || null,
+        displayName: user?.display_name || null,
+        sub: req.user?.sub || null,
+        status: req.membership.status,
+        roles: req.roles,
+        permissions: Array.from(req.permissions || []),
+    });
+});
+
+app.get("/api/account/profile", requireAuth, requireActiveMembership, (req, res) => {
+  const user = getUserById(req.userId);
+  res.json({
+    ok: true,
+    email: user?.email || req.user?.email || null,
+    displayName: user?.display_name || null,
+    sub: req.user?.sub || null,
+    status: req.membership?.status || null,
+  });
+});
+
+app.patch("/api/account/profile", requireAuth, requireActiveMembership, (req, res) => {
+  try {
+    const displayName = req.body?.displayName;
+    if (displayName != null && String(displayName).trim().length > 80) {
+      return res.status(400).json({ error: "displayName must be 80 characters or fewer" });
+    }
+
+    const user = updateUserDisplayName({
+      user_id: req.userId,
+      display_name: displayName,
+    });
+
+    logAudit({
+      actor_membership_id: req.membership.id,
+      actor_user_id: req.userId,
+      action: "account.profile.update",
+      resource_type: "user",
+      resource_id: String(req.userId),
+      details: { displayName: user?.display_name || null },
+    });
+
+    res.json({
+      ok: true,
+      email: user?.email || req.user?.email || null,
+      displayName: user?.display_name || null,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+async function deleteCognitoUserBySub(sub) {
+  if (!sub) return { deleted: false, reason: "missing_sub" };
+  if (!COGNITO_USER_POOL_ID) return { deleted: false, reason: "missing_user_pool" };
+
+  const client = await getCognitoAdminClient();
+  const escapedSub = String(sub).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  const existing = await client.send(
+    new cognitoSdk.ListUsersCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Filter: `sub = "${escapedSub}"`,
+      Limit: 1,
+    })
+  );
+
+  const username = existing?.Users?.[0]?.Username;
+  if (!username) return { deleted: false, reason: "not_found" };
+
+  await client.send(
+    new cognitoSdk.AdminDeleteUserCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Username: username,
+    })
+  );
+
+  return { deleted: true, username };
+}
+
+app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || "").trim();
+    if (confirm !== "DELETE") {
+      return res.status(400).json({ error: "confirm must be DELETE" });
+    }
+
+    const cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    disableSelfAccount({ user_id: req.userId });
+
+    logAudit({
+      actor_membership_id: req.membership.id,
+      actor_user_id: req.userId,
+      action: "account.delete",
+      resource_type: "user",
+      resource_id: String(req.userId),
+      details: { cognito: cognitoResult },
+    });
+
+    const secure = process.env.NODE_ENV === "production";
+    res.clearCookie("access_token", { path: "/", sameSite: "lax", secure });
+    res.clearCookie("refresh_token", { path: "/", sameSite: "lax", secure });
+
+    res.json({ ok: true, deleted: true, cognito: cognitoResult });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get("/api/provider/home", requireAuth, requireActiveMembership, async (req, res) => {
+  try {
+    const permissions = Array.from(req.permissions || []);
+    const canReadTriage = req.permissions?.has("triage.read");
+
+    const auditRows = canReadTriage
+      ? listAuditAll({ limit: 200 })
+          .filter((r) => /^(triage|member)\./.test(String(r.action || "")))
+          .slice(0, 25)
+      : listMyAudit({
+          actor_membership_id: req.membership.id,
+          limit: 10,
+        });
+
+    const recentAudit = auditRows.map((r) => ({
+      ...r,
+      actorEmail:
+        r.email ||
+        r.cognito_sub ||
+        req.user?.email ||
+        (r.actor_user_id ? `user#${r.actor_user_id}` : null),
+      details: parseJsonOrNull(r.details_json),
+    }));
+
+    let triage = null;
+    if (canReadTriage) {
+      const sinceIso = new Date(Date.now() - 24 * 3600e3).toISOString();
+      const bundle = await signedFetch({
+        path: "/Observation",
+        query: `_count=100&_sort=-_lastUpdated&_lastUpdated=ge${encodeURIComponent(
+          sinceIso
+        )}`,
+      });
+
+      const entries = (bundle.entry || [])
+        .map((e) => e.resource)
+        .filter((r) => r?.resourceType === "Observation");
+
+      const counts = { red: 0, orange: 0, yellow: 0 };
+      for (const o of entries) {
+        const text = (o.note || []).map((n) => n?.text || "").join(" ");
+        const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
+        const color = String(m?.[2] || "").toLowerCase();
+        if (!["red", "orange", "yellow"].includes(color)) continue;
+
+        const flags = readTriageFlagsFromObservation(o);
+        if (flags.contacted && flags.scheduled) continue;
+
+        counts[color] += 1;
+      }
+
+      triage = {
+        since: sinceIso,
+        counts,
+        openTotal: counts.red + counts.orange + counts.yellow,
+      };
+    }
+
+    res.json({
+      ok: true,
+      provider: {
+        email: req.user?.email || null,
+        status: req.membership?.status || null,
+        roles: req.roles || [],
+        permissions,
+      },
+      summary: {
+        recentAuditCount: recentAudit.length,
+        lastAuditAt: recentAudit[0]?.at || null,
+        triage,
+      },
+      recentAudit,
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.get("/api/audit/my", requireAuth, requireActiveMembership, (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const rows = listMyAudit({ actor_membership_id: req.membership.id, limit });
+    res.json(rows.map(r => ({
+        ...r, details: parseJsonOrNull(r.details_json)
+    })));
+
+});
+app.get("/api/admin/audit", requireAuth, requireActiveMembership, requirePermission("members.manage"), (req, res) => {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+    const rows = listAuditAll({ limit });
+    res.json(rows.map(r => ({ ...r, details: parseJsonOrNull(r.details_json) })));
+});
 /*AWS healthlake code start*/
 // ---------------------------------------------------------
 // HEALTHLAKE SIGNED CLIENT
@@ -189,6 +589,96 @@ if (process.env.AWS_PROFILE) {
   providerOptions.profile = process.env.AWS_PROFILE;
 }
 const credentials = fromNodeProviderChain(providerOptions);
+let cognitoSdk = null;
+let cognitoAdminClient = null;
+
+async function getCognitoAdminClient() {
+  if (cognitoAdminClient) return cognitoAdminClient;
+
+  if (!cognitoSdk) {
+    try {
+      cognitoSdk = await import("@aws-sdk/client-cognito-identity-provider");
+    } catch {
+      throw new Error(
+        "Missing dependency @aws-sdk/client-cognito-identity-provider. Run npm install in Backend/healthlakeproxy."
+      );
+    }
+  }
+
+  cognitoAdminClient = new cognitoSdk.CognitoIdentityProviderClient({
+    region: COGNITO_REGION,
+    credentials,
+  });
+  return cognitoAdminClient;
+}
+
+async function sendCognitoInvite({ email, suggestedRole }) {
+  if (!COGNITO_USER_POOL_ID) {
+    throw new Error("COGNITO_USER_POOL_ID is not configured");
+  }
+
+  const emailNormalized = String(email || "").trim().toLowerCase();
+  if (!emailNormalized) throw new Error("email is required");
+
+  const client = await getCognitoAdminClient();
+  const escapedEmail = emailNormalized.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  // When pool is configured with email alias, username must be a separate non-email value.
+  let username = null;
+  const existing = await client.send(
+    new cognitoSdk.ListUsersCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Filter: `email = "${escapedEmail}"`,
+      Limit: 1,
+    })
+  );
+
+  if (Array.isArray(existing?.Users) && existing.Users.length > 0) {
+    username = existing.Users[0]?.Username || null;
+  }
+
+  const isExisting = !!username;
+  if (!username) {
+    const nonce = Math.random().toString(36).slice(2, 8);
+    username = `inv_${Date.now()}_${nonce}`;
+  }
+
+  let inviteResponse = null;
+  inviteResponse = await client.send(
+    new cognitoSdk.AdminCreateUserCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Username: username,
+      UserAttributes: [{ Name: "email", Value: emailNormalized }],
+      DesiredDeliveryMediums: ["EMAIL"],
+      MessageAction: isExisting ? "RESEND" : undefined,
+    })
+  );
+
+  const groupMap = {
+    staff: process.env.COGNITO_GROUP_STAFF || "staff",
+    medical: process.env.COGNITO_GROUP_MEDICAL || "medical",
+    admin: process.env.COGNITO_GROUP_ADMIN || "admin",
+  };
+  const groupName = groupMap[suggestedRole] || groupMap.staff;
+  if (groupName) {
+    await client.send(
+      new cognitoSdk.AdminAddUserToGroupCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: username,
+        GroupName: groupName,
+      })
+    );
+  }
+
+  return {
+    username,
+    group: groupName,
+    email: emailNormalized,
+    delivery:
+      inviteResponse?.CodeDeliveryDetails || inviteResponse?.User?.UserStatus || null,
+    resent: isExisting,
+  };
+}
 
 const signer = new SignatureV4({
   service: "healthlake",
@@ -317,7 +807,7 @@ app.get("/api/observations", async (req, res) => {
 // PROVIDER TRIAGE BOARD (PROTECTED) Brendan code
 // ---------------------------------------------------------
 // Fetch recent Observations, group by triage color from "Triage: red|orange|green"
-app.get("/api/triage-cases", requireAuth, async (req, res) => {
+app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const hours = Math.max(1, Math.min(168, Number(req.query.sinceHours || 24)));
     const sinceIso = new Date(Date.now() - hours * 3600e3).toISOString();
@@ -350,17 +840,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
       }
 
       //read triage-flags extension ----
-      let flags = {};
-      const flagsExt = (o.extension || []).find(
-        (e) => e.url === "http://example.org/triage-flags"
-      );
-      if (flagsExt?.valueString) {
-        try {
-          flags = JSON.parse(flagsExt.valueString);
-        } catch {
-          flags = {};
-        }
-      }
+      const flags = readTriageFlagsFromObservation(o);
 
       // If both contacted & scheduled are true, SKIP this case entirely
       if (flags.contacted && flags.scheduled) {
@@ -401,7 +881,7 @@ app.get("/api/triage-cases", requireAuth, async (req, res) => {
 // ---------------------------------------------------------
 app.post("/api/intake", async (req, res) => {
   try {
-    const { patientId, answers = [], transcript = "", symptomOnset = null } = req.body || {};
+    const { patientId, answers = [], transcript = "" } = req.body || {};
     console.log(`[INTAKE] Received request for patientId: ${patientId}`);
 
     if (!patientId || typeof patientId !== "string") {
@@ -455,14 +935,6 @@ app.post("/api/intake", async (req, res) => {
         { text: `Transcript:\n${transcript}` },
       ],
       extension: [
-        ...(symptomOnset
-          ? [
-            {
-              url: "http://example.org/symptom-onset",
-              valueString: JSON.stringify(symptomOnset),
-            },
-          ]
-          : []),
         {
           url: "http://example.org/triage-answers",
           valueString: JSON.stringify(answers),
@@ -476,7 +948,12 @@ app.post("/api/intake", async (req, res) => {
       body: obs,
     });
 
-    console.log(`[INTAKE] Successfully created Observation ${created?.id} for patient ${patientId}`);
+    console.log(
+      "[INTAKE] Successfully created Observation " +
+        (created?.id || "") +
+        " for patient " +
+        patientId
+    );
 
     res.json({
       id: created?.id || null,
@@ -542,17 +1019,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     }
 
     // --- flags ---
-    let flags = {};
-    const flagsExt = (obs.extension || []).find(
-      (e) => e.url === "http://example.org/triage-flags"
-    );
-    if (flagsExt?.valueString) {
-      try {
-        flags = JSON.parse(flagsExt.valueString);
-      } catch {
-        // ignore
-      }
-    }
+    const flags = readTriageFlagsFromObservation(obs);
 
     // --- patient info (non-fatal) ---
     let patient = null;
@@ -577,19 +1044,6 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
       }
     }
 
-    // --- symptom onset ---
-    let symptomStart = null;
-    const onsetExt = (obs.extension || []).find(
-      (e) => e.url === "http://example.org/symptom-onset"
-    );
-    if (onsetExt?.valueString) {
-      try {
-        symptomStart = JSON.parse(onsetExt.valueString);
-      } catch {
-        // ignore
-      }
-    }
-
     res.json({
       id: obs.id,
       date:
@@ -600,7 +1054,6 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
       color: color || null,
       rationale: rationale || null,
       answers,
-      symptomStart,
       patient,
       flags,
     });
@@ -609,12 +1062,122 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/provider/schedule-week",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const rawStart = String(req.query.start || "").trim();
+      const startDate = rawStart ? new Date(`${rawStart}T00:00:00`) : new Date();
+      if (Number.isNaN(startDate.getTime())) {
+        return res.status(400).json({ error: "start must be a valid YYYY-MM-DD date" });
+      }
+
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+
+      const bundle = await signedFetch({
+        path: "/Observation",
+        query: "_count=100&_sort=-_lastUpdated",
+      });
+
+      const entries = (bundle.entry || [])
+        .map((e) => e.resource)
+        .filter((r) => r?.resourceType === "Observation");
+
+      const appointments = [];
+
+      for (const obs of entries) {
+        const flags = readTriageFlagsFromObservation(obs);
+        const appointmentAt = flags?.appointmentAt;
+        if (!flags?.scheduled || !appointmentAt) continue;
+
+        const apptDate = new Date(appointmentAt);
+        if (Number.isNaN(apptDate.getTime())) continue;
+        if (apptDate < start || apptDate >= end) continue;
+
+        let color =
+          obs?.valueCodeableConcept?.text ||
+          obs?.valueCodeableConcept?.coding?.[0]?.code ||
+          "";
+        color = String(color || "").toLowerCase();
+        if (!["red", "orange", "yellow"].includes(color)) {
+          const noteText = (obs.note || []).map((n) => n?.text || "").join(" ");
+          const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(noteText);
+          color = String(match?.[2] || "yellow").toLowerCase();
+        }
+
+        const patientId = obs.subject?.reference?.replace(/^Patient\//, "") || "unknown";
+        const patientName = obs.subject?.display || `Patient ${patientId}`;
+
+        appointments.push({
+          riskId: obs.id,
+          patientId,
+          patientName,
+          appointmentAt: apptDate.toISOString(),
+          color,
+          contacted: !!flags?.contacted,
+          scheduled: !!flags?.scheduled,
+          contactMethod: flags?.contactMethod || null,
+          sourceDate:
+            obs.effectiveDateTime ||
+            obs.issued ||
+            obs.meta?.lastUpdated ||
+            null,
+        });
+      }
+
+      appointments.sort((a, b) => {
+        const diff =
+          new Date(a.appointmentAt).getTime() - new Date(b.appointmentAt).getTime();
+        if (diff !== 0) return diff;
+        return String(a.patientName || "").localeCompare(String(b.patientName || ""));
+      });
+
+      const days = [];
+      for (let i = 0; i < 7; i += 1) {
+        const dayDate = new Date(start);
+        dayDate.setDate(start.getDate() + i);
+        const dateKey = dayDate.toISOString().slice(0, 10);
+        days.push({
+          date: dateKey,
+          label: dayDate.toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          }),
+          appointments: appointments.filter(
+            (item) => item.appointmentAt.slice(0, 10) === dateKey
+          ),
+        });
+      }
+
+      res.json({
+        ok: true,
+        range: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        total: appointments.length,
+        appointments,
+        days,
+      });
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.message });
+    }
+  }
+);
+
 // ---------------------------------------------------------
 // FLAGS (contacted/scheduled etc.) – PROTECTED
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/flags",
-  requireAuth,
+  requireAuth, requireActiveMembership, requirePermission("triage.flag"),
   async (req, res) => {
     try {
       const rawId = req.params.riskId || "";
@@ -623,7 +1186,9 @@ app.patch(
         return res.status(400).json({ error: "riskId is required" });
       }
 
-      const updates = req.body || {};
+      const body = req.body || {};
+      const updates =
+        body?.bulk && typeof body.bulk === "object" ? body.bulk : body;
       if (!updates || typeof updates !== "object") {
         return res.status(400).json({ error: "flags payload required" });
       }
@@ -639,14 +1204,10 @@ app.patch(
       const existing = exts.find((e) => e.url === url);
 
       if (existing?.valueString) {
-        try {
-          flags = JSON.parse(existing.valueString);
-        } catch {
-          flags = {};
-        }
+        flags = parseJsonOrNull(existing.valueString) || {};
       }
 
-      flags = { ...flags, ...updates };
+      flags = { ...normalizeTriageFlags(flags), ...updates };
 
       if (existing) {
         existing.valueString = JSON.stringify(flags);
@@ -660,7 +1221,14 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "triage.flag.update",
+            resource_type: "Observation",
+            resource_id: riskId,
+            details: { updates },
+        });
       res.json({ ok: true, flags });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
@@ -673,7 +1241,7 @@ app.patch(
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/override",
-  requireAuth,
+  requireAuth, requireActiveMembership, requirePermission("triage.override"),
   async (req, res) => {
     try {
       const rawId = req.params.riskId || "";
@@ -692,12 +1260,12 @@ app.patch(
           .json({ error: "color must be red|orange|yellow" });
       }
 
-      // load Observation
+      // oad Observation
       const obs = await signedFetch({
         path: `/Observation/${encodeURIComponent(riskId)}`,
       });
 
-      // 1) update valueCodeableConcept
+      //update valueCodeableConcept
       obs.valueCodeableConcept = obs.valueCodeableConcept || {};
       obs.valueCodeableConcept.text = color;
       obs.valueCodeableConcept.coding = [
@@ -707,7 +1275,7 @@ app.patch(
         },
       ];
 
-      // 2) update/add "Triage: <color>" note
+      //update/add "Triage: <color>" note
       const notes = obs.note || [];
       const triageNoteIdx = notes.findIndex(
         (n) => typeof n?.text === "string" && /^triage\s*:/i.test(n.text)
@@ -720,7 +1288,7 @@ app.patch(
       }
       obs.note = notes;
 
-      // 3) record override reason in extension
+      //record override reason in extension
       const overrideUrl = "http://example.org/triage-override";
       const exts = obs.extension || [];
       const ts = new Date().toISOString();
@@ -739,14 +1307,233 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
-
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "triage.override",
+            resource_type: "Observation",
+            resource_id: riskId,
+            details: { color, reason },
+        });
       res.json({ ok: true, color, override: payload });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
     }
   }
 );
+// ---------------------------
+// ADMIN: approvals (ADMIN ONLY via members.manage)
+// ---------------------------
+app.get(
+  "/api/admin/requests",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => res.json(listPendingMembers())
+);
 
+app.post(
+  "/api/admin/invite",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  async (req, res) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const suggestedRoleRaw = String(req.body?.suggested_role || "staff").trim().toLowerCase();
+      const note = req.body?.note ? String(req.body.note).trim() : null;
+
+      if (!email) return res.status(400).json({ error: "email is required" });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "email format is invalid" });
+      }
+
+      const allowedRoles = new Set(["staff", "medical", "admin"]);
+      if (!allowedRoles.has(suggestedRoleRaw)) {
+        return res.status(400).json({ error: "suggested_role must be staff|medical|admin" });
+      }
+
+      const cognitoInvite = await sendCognitoInvite({
+        email,
+        suggestedRole: suggestedRoleRaw,
+      });
+
+      const invite = createOrRefreshInvite({
+        email,
+        suggested_role: suggestedRoleRaw,
+        note,
+        invited_by_membership_id: req.membership.id,
+        invited_by_user_id: req.userId,
+      });
+
+      logAudit({
+        actor_membership_id: req.membership.id,
+        actor_user_id: req.userId,
+        action: "member.invite",
+        resource_type: "invite",
+        resource_id: String(invite.id),
+        details: {
+          email,
+          suggested_role: suggestedRoleRaw,
+          note: note || null,
+          cognito_username: cognitoInvite.username,
+          cognito_group: cognitoInvite.group,
+        },
+      });
+
+      res.json({ ok: true, invite, cognito: { invited: true, ...cognitoInvite } });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/invites",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const limit = Math.min(300, Math.max(1, Number(req.query.limit || 100)));
+      res.json(listMemberInvites({ limit }));
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/approve",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const { membership_id, roles } = req.body || {};
+      if (!membership_id) return res.status(400).json({ error: "membership_id required" });
+      if (!Array.isArray(roles) || roles.length === 0) {
+        return res.status(400).json({ error: "roles[] required (admin|medical|staff)" });
+      }
+
+      approveMember({
+        membership_id: Number(membership_id),
+        roleNames: roles,
+        approved_by_sub: req.user.sub,
+      });
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "member.approve",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: {roles},
+        });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/disable",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("members.manage"),
+  (req, res) => {
+    try {
+      const { membership_id } = req.body || {};
+      if (!membership_id) return res.status(400).json({ error: "membership_id required" });
+
+        disableMember({ membership_id: Number(membership_id) });
+        logAudit({
+            actor_membership_id: req.membership.id,
+            actor_user_id: req.userId,
+            action: "member.disable",
+            resource_type: "membership",
+            resource_id: String(membership_id),
+            details: {},
+        });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+// ---------------------------
+// ADMIN: roles/permissions (ADMIN ONLY via roles.manage)
+// ---------------------------
+app.get(
+  "/api/admin/roles",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => res.json(listRoles())
+);
+
+app.get(
+  "/api/admin/permissions",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => res.json(listPermissions())
+);
+
+app.post(
+  "/api/admin/roles",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      const { name, description } = req.body || {};
+      if (!name) return res.status(400).json({ error: "name required" });
+
+      const role = createRole({ name, description });
+      res.json(role);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.delete(
+  "/api/admin/roles/:roleId",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      deleteRole({ role_id: Number(req.params.roleId) });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/roles/:roleId/permissions",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("roles.manage"),
+  (req, res) => {
+    try {
+      const role_id = Number(req.params.roleId);
+      const { permissions } = req.body || {};
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ error: "permissions[] required" });
+      }
+
+      setRolePermissions({ role_id, permKeys: permissions });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
 // ---------------------------------------------------------
 // START SERVER
 // ---------------------------------------------------------
