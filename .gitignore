@@ -37,3 +37,5 @@ Backend/healthlakeproxy/rbac.db-wal
 Backend/healthlakeproxy/rbac.db-wal
 Backend/healthlakeproxy/rbac.db-shm
 Backend/healthlakeproxy/rbac.db-shm
+Backend/healthlakeproxy/rbac.db-wal
+Backend/healthlakeproxy/rbac.db-shm
