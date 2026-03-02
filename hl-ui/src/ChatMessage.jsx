@@ -1,7 +1,7 @@
 import React from "react";
 import "./Chatbot.css";
 //wiem code
-const ChatMessage = ({ sender, text, isHTML = false, timestamp }) => {
+const ChatMessage = ({ sender, text, isHTML = false, timestamp, onEdit }) => {
   // Render \n as actual line breaks for plain text messages
   const renderText = (t) =>
     t.split("\n").map((line, i, arr) => (
@@ -13,6 +13,15 @@ const ChatMessage = ({ sender, text, isHTML = false, timestamp }) => {
 
   return (
     <div className={sender === "user" ? "message-user" : "message-bot"}>
+      {sender === "user" && onEdit && !isHTML && (
+        <button
+          className="message-edit-btn"
+          onClick={onEdit}
+          title="Edit message"
+        >
+          ✏️
+        </button>
+      )}
       {isHTML ? (
         <div dangerouslySetInnerHTML={{ __html: text }} />
       ) : (

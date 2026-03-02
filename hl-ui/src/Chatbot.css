@@ -249,6 +249,39 @@ html {
     text-align: right;
 }
 
+/* Message edit button */
+.message-edit-btn {
+    position: absolute;
+    left: -32px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--white);
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: var(--transition-fast);
+    box-shadow: var(--shadow-sm);
+    z-index: 2;
+}
+
+.message-user:hover .message-edit-btn {
+    opacity: 1;
+    left: -36px;
+}
+
+.message-edit-btn:hover {
+    background: var(--primary-gradient);
+    color: var(--white);
+    transform: translateY(-50%) scale(1.1);
+}
+
 /* ============================================
    QUICK REPLY BUTTONS
    ============================================ */
