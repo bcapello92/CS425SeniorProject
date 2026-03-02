@@ -353,6 +353,10 @@ function parseJsonOrNull(value) {
   }
 }
 
+function isValidFhirResourceId(value) {
+  return /^[A-Za-z0-9-.]{1,256}$/.test(String(value || ""));
+}
+
 function normalizeTriageFlags(flags) {
   const base = flags && typeof flags === "object" ? flags : {};
   const bulk = base.bulk && typeof base.bulk === "object" ? base.bulk : {};
@@ -887,6 +891,11 @@ app.post("/api/intake", async (req, res) => {
     if (!patientId || typeof patientId !== "string") {
       return res.status(400).json({ error: "patientId is required" });
     }
+    if (!isValidFhirResourceId(patientId)) {
+      return res.status(400).json({
+        error: "patientId must match [A-Za-z0-9-.]{1,256}",
+      });
+    }
 
     // 1) Ask classifier model
     const { color, rationale } = await callModelTriage({
@@ -1026,21 +1035,25 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     const patientRef = obs?.subject?.reference; // e.g. "Patient/patien0"
     if (patientRef && /^Patient\//.test(patientRef)) {
       const pid = patientRef.replace(/^Patient\//, "");
-      try {
-        const p = await signedFetch({
-          path: `/Patient/${encodeURIComponent(pid)}`,
-        });
-        const nm = p?.name?.[0] || {};
-        const full =
-          [nm.given?.join(" "), nm.family].filter(Boolean).join(" ") || pid;
-        patient = { id: pid, name: full, birthDate: p.birthDate || null };
-      } catch (err) {
-        console.warn(
-          "[HL WARN] patient lookup failed",
-          err.status || "",
-          err.message || ""
-        );
+      if (!isValidFhirResourceId(pid)) {
         patient = { id: pid, name: pid, birthDate: null };
+      } else {
+        try {
+          const p = await signedFetch({
+            path: `/Patient/${encodeURIComponent(pid)}`,
+          });
+          const nm = p?.name?.[0] || {};
+          const full =
+            [nm.given?.join(" "), nm.family].filter(Boolean).join(" ") || pid;
+          patient = { id: pid, name: full, birthDate: p.birthDate || null };
+        } catch (err) {
+          console.warn(
+            "[HL WARN] patient lookup failed",
+            err.status || "",
+            err.message || ""
+          );
+          patient = { id: pid, name: pid, birthDate: null };
+        }
       }
     }
 
