@@ -776,7 +776,7 @@ app.get("/diag/hl-ping", async (req, res) => {
 });
 
 
-app.get("/api/patients", async (req, res) => {
+app.get("/api/patients", requireAuth, requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const count = Math.min(100, Math.max(1, Number(req.query.count || 20)));
     const data = await signedFetch({
@@ -789,7 +789,7 @@ app.get("/api/patients", async (req, res) => {
   }
 });
 
-app.get("/api/observations", async (req, res) => {
+app.get("/api/observations", requireAuth, requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const patientId = req.query.patientId;
     if (!patientId)
@@ -978,7 +978,7 @@ app.post("/api/intake", async (req, res) => {
 // ---------------------------------------------------------
 // TRIAGE DETAIL (PROTECTED)
 // ---------------------------------------------------------
-app.get("/api/triage-detail", requireAuth, async (req, res) => {
+app.get("/api/triage-detail", requireAuth, requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const riskId = String(req.query.riskId || "").trim();
     if (!riskId) {

@@ -53,15 +53,17 @@ export default function AdminAudit() {
             <div>Resource</div>
             <div>Details</div>
           </div>
-          {rows.map((r) => (
-            <div key={r.id} style={rowStyle}>
-              <div style={mono}>{r.at}</div>
-              <div>{r.email || r.actor_membership_id}</div>
-              <div>{r.action}</div>
-              <div>{`${r.resource_type || "-"} ${r.resource_id || ""}`.trim()}</div>
-              <div style={monoSmall}>{r.details_json || "-"}</div>
-            </div>
-          ))}
+          <div style={bodyScroll}>
+            {rows.map((r) => (
+              <div key={r.id} style={rowStyle}>
+                <div style={mono}>{r.at}</div>
+                <div>{r.email || r.actor_membership_id}</div>
+                <div>{r.action}</div>
+                <div>{`${r.resource_type || "-"} ${r.resource_id || ""}`.trim()}</div>
+                <div style={monoSmall}>{r.details_json || "-"}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -91,6 +93,14 @@ const headerRow = {
   background: "#f6f8fb",
   fontWeight: 800,
   fontSize: 13,
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
+};
+
+const bodyScroll = {
+  maxHeight: "70vh",
+  overflowY: "auto",
 };
 
 const rowStyle = {

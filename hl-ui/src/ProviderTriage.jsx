@@ -199,6 +199,18 @@ export default function ProviderTriage() {
     }
 
     const groups = data?.groups || { red: [], orange: [], yellow: [] };
+    const activeScheduleRiskId = Object.entries(flagUI).find(
+        ([, ui]) => ui?.scheduled?.open
+    )?.[0];
+    const activeScheduleUI = activeScheduleRiskId ? flagUI[activeScheduleRiskId]?.scheduled : null;
+    const activeScheduleItem = activeScheduleRiskId
+        ? Object.values(groups)
+            .flat()
+            .find((it) => it.riskId === activeScheduleRiskId)
+        : null;
+    const activeScheduleDetail = activeScheduleRiskId ? detail[activeScheduleRiskId]?.data : null;
+    const schedulerWeekStart = activeScheduleUI?.weekStart || getWeekStartInput(activeScheduleUI?.at);
+    const schedulerDays = buildSchedulerDays(schedulerWeekStart);
 
     return (
         <div
@@ -248,8 +260,8 @@ export default function ProviderTriage() {
 
                 {!err && !loading && data && (
                     <div style={{ marginBottom: 12, color: "#555", textAlign: "center" }}>
-                        Since {new Date(data.since).toLocaleString()} — Totals: Severe{" "}
-                        {data.counts?.red || 0}, Moderate {data.counts?.orange || 0}, Routine{" "}
+                        Since {new Date(data.since).toLocaleString()} — Totals: Urgent{" "}
+                        {data.counts?.red || 0}, Semi-Urgent {data.counts?.orange || 0}, Routine{" "}
                         {data.counts?.yellow || 0}
                     </div>
                 )}
@@ -419,7 +431,13 @@ export default function ProviderTriage() {
                                                                                 ...prev,
                                                                                 [item.riskId]: {
                                                                                     ...(prev[item.riskId] || {}),
-                                                                                    scheduled: { open: true, at: "", error: null, saving: false },
+                                                                                    scheduled: {
+                                                                                        open: true,
+                                                                                        at: "",
+                                                                                        error: null,
+                                                                                        saving: false,
+                                                                                        weekStart: getWeekStartInput(""),
+                                                                                    },
                                                                                 },
                                                                             }));
                                                                         }}
@@ -434,8 +452,8 @@ export default function ProviderTriage() {
                                                                         onChange={(e) => openOverrideEditor(item, currentColor, e.target.value)}
                                                                         style={{ marginLeft: 6 }}
                                                                     >
-                                                                        <option value="red">Severe (Red)</option>
-                                                                        <option value="orange">Moderate (Orange)</option>
+                                                                        <option value="red">Urgent (Red)</option>
+                                                                        <option value="orange">Semi-Urgent (Orange)</option>
                                                                         <option value="yellow">Routine (Yellow)</option>
                                                                     </select>
                                                                 </span>
@@ -547,129 +565,6 @@ export default function ProviderTriage() {
                                                                     </div>
                                                                 )}
 
-                                                                {/* SCHEDULE PROMPT */}
-                                                                {flagUI[item.riskId]?.scheduled?.open && (
-                                                                    <div
-                                                                        style={{
-                                                                            width: "100%",
-                                                                            marginTop: 10,
-                                                                            padding: 10,
-                                                                            background: "#fff",
-                                                                            borderRadius: 8,
-                                                                            border: "1px solid #e5e7eb",
-                                                                        }}
-                                                                    >
-                                                                        <div style={{ fontWeight: 700, marginBottom: 6 }}>When is the appointment?</div>
-
-                                                                        <input
-                                                                            type="datetime-local"
-                                                                            value={flagUI[item.riskId].scheduled.at}
-                                                                            step={1800}
-                                                                            onChange={(e) => {
-                                                                                const at = e.target.value;
-                                                                                setFlagUI((prev) => ({
-                                                                                    ...prev,
-                                                                                    [item.riskId]: {
-                                                                                        ...(prev[item.riskId] || {}),
-                                                                                        scheduled: { ...prev[item.riskId].scheduled, at },
-                                                                                    },
-                                                                                }));
-                                                                            }}
-                                                                            style={{ padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
-                                                                        />
-
-                                                                        <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
-                                                                            Available times: 8:00 AM to 4:00 PM in 30-minute slots.
-                                                                        </div>
-
-                                                                        {flagUI[item.riskId].scheduled.error && (
-                                                                            <div style={{ color: "crimson", marginTop: 6 }}>
-                                                                                {flagUI[item.riskId].scheduled.error}
-                                                                            </div>
-                                                                        )}
-
-                                                                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-                                                                            <button
-                                                                                style={btn("secondary")}
-                                                                                onClick={() => {
-                                                                                    setFlagUI((prev) => ({
-                                                                                        ...prev,
-                                                                                        [item.riskId]: {
-                                                                                            ...(prev[item.riskId] || {}),
-                                                                                            scheduled: { open: false },
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            >
-                                                                                Cancel
-                                                                            </button>
-
-                                                                            <button
-                                                                                style={btn("primary")}
-                                                                                disabled={!!flagUI[item.riskId].scheduled.saving}
-                                                                                onClick={async () => {
-                                                                                    const ui = flagUI[item.riskId].scheduled;
-                                                                                    const local = (ui.at || "").trim();
-                                                                                    if (!local) {
-                                                                                        setFlagUI((prev) => ({
-                                                                                            ...prev,
-                                                                                            [item.riskId]: {
-                                                                                                ...(prev[item.riskId] || {}),
-                                                                                                scheduled: { ...ui, error: "Please select a date/time." },
-                                                                                            },
-                                                                                        }));
-                                                                                        return;
-                                                                                    }
-
-                                                                                    // datetime-local is local time; convert to ISO
-                                                                                    const apptLocal = new Date(local);
-                                                                                    if (!isValidAppointmentSlot(apptLocal)) {
-                                                                                        setFlagUI((prev) => ({
-                                                                                            ...prev,
-                                                                                            [item.riskId]: {
-                                                                                                ...(prev[item.riskId] || {}),
-                                                                                                scheduled: {
-                                                                                                    ...ui,
-                                                                                                    error: "Appointments must be between 8:00 AM and 4:00 PM on the hour or half hour.",
-                                                                                                },
-                                                                                            },
-                                                                                        }));
-                                                                                        return;
-                                                                                    }
-
-                                                                                    const apptIso = apptLocal.toISOString();
-
-                                                                                    setFlagUI((prev) => ({
-                                                                                        ...prev,
-                                                                                        [item.riskId]: { ...(prev[item.riskId] || {}), scheduled: { ...ui, saving: true, error: null } },
-                                                                                    }));
-
-                                                                                    await setFlag(item.riskId, {
-                                                                                        scheduled: true,
-                                                                                        appointmentAt: apptIso,
-                                                                                    });
-
-                                                                                    setFlagUI((prev) => ({
-                                                                                        ...prev,
-                                                                                        [item.riskId]: {
-                                                                                            ...(prev[item.riskId] || {}),
-                                                                                            scheduled: { open: false },
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            >
-                                                                                Save
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {/* Optional: show what’s saved */}
-                                                                        {!!d.data?.flags?.appointmentAt && (
-                                                                            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                                                                                Saved appointment: {new Date(d.data.flags.appointmentAt).toLocaleString()}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                )}
                                                             </div>
 
 
@@ -773,6 +668,254 @@ export default function ProviderTriage() {
                     ))}
                 </div>
             </div>
+
+            {activeScheduleRiskId && activeScheduleUI && (
+                <div style={schedulerOverlay}>
+                    <div style={schedulerModal}>
+                        <div style={schedulerHeader}>
+                            <div>
+                                <div style={schedulerEyebrow}>Schedule Appointment</div>
+                                <div style={schedulerTitle}>
+                                    {activeScheduleItem?.patientName || activeScheduleDetail?.patient?.name || "Patient"}
+                                </div>
+                                <div style={schedulerMeta}>
+                                    {activeScheduleItem?.patientId || activeScheduleDetail?.patient?.id || activeScheduleRiskId}
+                                </div>
+                            </div>
+                            <button
+                                style={iconBtn}
+                                onClick={() => {
+                                    setFlagUI((prev) => ({
+                                        ...prev,
+                                        [activeScheduleRiskId]: {
+                                            ...(prev[activeScheduleRiskId] || {}),
+                                            scheduled: { open: false },
+                                        },
+                                    }));
+                                }}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div style={schedulerSubhead}>
+                            Choose a day, then select an available 30-minute slot between 8:00 AM and 4:00 PM.
+                        </div>
+
+                        <div style={schedulerWeekNav}>
+                            <button
+                                style={btn("secondary")}
+                                onClick={() => {
+                                    setFlagUI((prev) => {
+                                        const current = prev[activeScheduleRiskId]?.scheduled || {};
+                                        const nextWeekStart = shiftWeekStartInput(current.weekStart || getWeekStartInput(current.at), -7);
+                                        const selectedDateKey = getDateKeyFromLocalInput(current.at);
+                                        const nextAt =
+                                            selectedDateKey && isDateWithinWorkWeek(selectedDateKey, nextWeekStart)
+                                                ? current.at
+                                                : combineDateAndTime(nextWeekStart, getTimePart(current.at) || "08:00");
+                                        return {
+                                            ...prev,
+                                            [activeScheduleRiskId]: {
+                                                ...(prev[activeScheduleRiskId] || {}),
+                                                scheduled: {
+                                                    ...current,
+                                                    weekStart: nextWeekStart,
+                                                    at: nextAt,
+                                                    error: null,
+                                                },
+                                            },
+                                        };
+                                    });
+                                }}
+                            >
+                                Previous week
+                            </button>
+                            <div style={schedulerWeekLabel}>
+                                {formatWorkWeekLabel(schedulerWeekStart)}
+                            </div>
+                            <button
+                                style={btn("secondary")}
+                                onClick={() => {
+                                    setFlagUI((prev) => {
+                                        const current = prev[activeScheduleRiskId]?.scheduled || {};
+                                        const nextWeekStart = shiftWeekStartInput(current.weekStart || getWeekStartInput(current.at), 7);
+                                        const selectedDateKey = getDateKeyFromLocalInput(current.at);
+                                        const nextAt =
+                                            selectedDateKey && isDateWithinWorkWeek(selectedDateKey, nextWeekStart)
+                                                ? current.at
+                                                : combineDateAndTime(nextWeekStart, getTimePart(current.at) || "08:00");
+                                        return {
+                                            ...prev,
+                                            [activeScheduleRiskId]: {
+                                                ...(prev[activeScheduleRiskId] || {}),
+                                                scheduled: {
+                                                    ...current,
+                                                    weekStart: nextWeekStart,
+                                                    at: nextAt,
+                                                    error: null,
+                                                },
+                                            },
+                                        };
+                                    });
+                                }}
+                            >
+                                Next week
+                            </button>
+                        </div>
+
+                        <div style={schedulerDayGrid}>
+                            {schedulerDays.map((day) => {
+                                const selectedDate = getDateKeyFromLocalInput(activeScheduleUI.at);
+                                const isSelected = day.dateKey === selectedDate;
+                                return (
+                                    <button
+                                        key={day.dateKey}
+                                        style={dayPill(isSelected)}
+                                        onClick={() => {
+                                            const nextValue = combineDateAndTime(day.dateKey, getTimePart(activeScheduleUI.at) || "08:00");
+                                            setFlagUI((prev) => ({
+                                                ...prev,
+                                                [activeScheduleRiskId]: {
+                                                    ...(prev[activeScheduleRiskId] || {}),
+                                                    scheduled: {
+                                                        ...prev[activeScheduleRiskId].scheduled,
+                                                        at: nextValue,
+                                                        weekStart: schedulerWeekStart,
+                                                        error: null,
+                                                    },
+                                                },
+                                            }));
+                                        }}
+                                    >
+                                        <span>{day.label}</span>
+                                        <span style={{ fontSize: 11, opacity: 0.75 }}>{day.subLabel}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div style={schedulerSlots}>
+                            {buildTimeSlots().map((time) => {
+                                const isSelected = getTimePart(activeScheduleUI.at) === time.value;
+                                return (
+                                    <button
+                                        key={time.value}
+                                        style={slotBtn(isSelected)}
+                                        onClick={() => {
+                                            const dateKey =
+                                                getDateKeyFromLocalInput(activeScheduleUI.at) || schedulerDays[0]?.dateKey;
+                                            const nextValue = combineDateAndTime(dateKey, time.value);
+                                            setFlagUI((prev) => ({
+                                                ...prev,
+                                                [activeScheduleRiskId]: {
+                                                    ...(prev[activeScheduleRiskId] || {}),
+                                                    scheduled: {
+                                                        ...prev[activeScheduleRiskId].scheduled,
+                                                        at: nextValue,
+                                                        weekStart: schedulerWeekStart,
+                                                        error: null,
+                                                    },
+                                                },
+                                            }));
+                                        }}
+                                    >
+                                        {time.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {activeScheduleUI.error && (
+                            <div style={{ color: "crimson", marginTop: 10 }}>
+                                {activeScheduleUI.error}
+                            </div>
+                        )}
+
+                        {!!activeScheduleDetail?.flags?.appointmentAt && (
+                            <div style={savedLine}>
+                                Current appointment: {new Date(activeScheduleDetail.flags.appointmentAt).toLocaleString()}
+                            </div>
+                        )}
+
+                        <div style={schedulerFooter}>
+                            <button
+                                style={btn("secondary")}
+                                onClick={() => {
+                                    setFlagUI((prev) => ({
+                                        ...prev,
+                                        [activeScheduleRiskId]: {
+                                            ...(prev[activeScheduleRiskId] || {}),
+                                            scheduled: { open: false },
+                                        },
+                                    }));
+                                }}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                style={btn("primary")}
+                                disabled={!!activeScheduleUI.saving}
+                                onClick={async () => {
+                                    const ui = flagUI[activeScheduleRiskId].scheduled;
+                                    const local = (ui.at || "").trim();
+                                    if (!local) {
+                                        setFlagUI((prev) => ({
+                                            ...prev,
+                                            [activeScheduleRiskId]: {
+                                                ...(prev[activeScheduleRiskId] || {}),
+                                                scheduled: { ...ui, error: "Please select a day and time." },
+                                            },
+                                        }));
+                                        return;
+                                    }
+
+                                    const apptLocal = new Date(local);
+                                    if (!isValidAppointmentSlot(apptLocal)) {
+                                        setFlagUI((prev) => ({
+                                            ...prev,
+                                            [activeScheduleRiskId]: {
+                                                ...(prev[activeScheduleRiskId] || {}),
+                                                scheduled: {
+                                                    ...ui,
+                                                    error: "Appointments must be between 8:00 AM and 4:00 PM on the hour or half hour.",
+                                                },
+                                            },
+                                        }));
+                                        return;
+                                    }
+
+                                    const apptIso = apptLocal.toISOString();
+
+                                    setFlagUI((prev) => ({
+                                        ...prev,
+                                        [activeScheduleRiskId]: {
+                                            ...(prev[activeScheduleRiskId] || {}),
+                                            scheduled: { ...ui, saving: true, error: null },
+                                        },
+                                    }));
+
+                                    await setFlag(activeScheduleRiskId, {
+                                        scheduled: true,
+                                        appointmentAt: apptIso,
+                                    });
+
+                                    setFlagUI((prev) => ({
+                                        ...prev,
+                                        [activeScheduleRiskId]: {
+                                            ...(prev[activeScheduleRiskId] || {}),
+                                            scheduled: { open: false },
+                                        },
+                                    }));
+                                }}
+                            >
+                                {activeScheduleUI.saving ? "Saving..." : "Save appointment"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -784,8 +927,8 @@ function colorBg(c) {
 }
 
 function labelForColor(c) {
-    if (c === "red") return "Severe";
-    if (c === "orange") return "Moderate";
+    if (c === "red") return "Urgent";
+    if (c === "orange") return "Semi-Urgent";
     return "Routine";
 }
 
@@ -800,6 +943,92 @@ function isValidAppointmentSlot(date) {
     return true;
 }
 
+function buildSchedulerDays(weekStartInput) {
+    const anchor = new Date(`${weekStartInput}T00:00:00`);
+    anchor.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 5 }, (_, index) => {
+        const date = new Date(anchor);
+        date.setDate(anchor.getDate() + index);
+        return {
+            dateKey: date.toISOString().slice(0, 10),
+            label: date.toLocaleDateString("en-US", { weekday: "short" }),
+            subLabel: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        };
+    });
+}
+
+function buildTimeSlots() {
+    const slots = [];
+    for (let hour = 8; hour <= 16; hour += 1) {
+        for (const minute of [0, 30]) {
+            const date = new Date();
+            date.setHours(hour, minute, 0, 0);
+            slots.push({
+                value: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+                label: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+            });
+        }
+    }
+    return slots;
+}
+
+function getDateKeyFromLocalInput(value) {
+    if (!value) return "";
+    return String(value).slice(0, 10);
+}
+
+function getTimePart(value) {
+    if (!value || !String(value).includes("T")) return "";
+    return String(value).slice(11, 16);
+}
+
+function combineDateAndTime(dateKey, timePart) {
+    if (!dateKey) return "";
+    return `${dateKey}T${timePart || "08:00"}`;
+}
+
+function getWeekStartInput(value) {
+    const base = value ? new Date(value) : new Date();
+    if (Number.isNaN(base.getTime())) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return getMonday(today).toISOString().slice(0, 10);
+    }
+    base.setHours(0, 0, 0, 0);
+    return getMonday(base).toISOString().slice(0, 10);
+}
+
+function getMonday(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function shiftWeekStartInput(weekStartInput, days) {
+    const base = new Date(`${weekStartInput}T00:00:00`);
+    base.setDate(base.getDate() + days);
+    return base.toISOString().slice(0, 10);
+}
+
+function formatWorkWeekLabel(weekStartInput) {
+    const start = new Date(`${weekStartInput}T00:00:00`);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 4);
+    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+}
+
+function isDateWithinWorkWeek(dateKey, weekStartInput) {
+    const start = new Date(`${weekStartInput}T00:00:00`);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 4);
+    const value = new Date(`${dateKey}T00:00:00`);
+    return value >= start && value <= end;
+}
+
 function btn(kind) {
     const base = {
         padding: "6px 10px",
@@ -811,4 +1040,140 @@ function btn(kind) {
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
 }
+
+function dayPill(selected) {
+    return {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 4,
+        padding: "10px 12px",
+        borderRadius: 12,
+        border: selected ? "1px solid #2563eb" : "1px solid #d1d5db",
+        background: selected ? "#eff6ff" : "#fff",
+        cursor: "pointer",
+        minWidth: 92,
+        fontWeight: 700,
+        color: "#111827",
+    };
+}
+
+function slotBtn(selected) {
+    return {
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: selected ? "1px solid #0f766e" : "1px solid #d1d5db",
+        background: selected ? "#ecfdf5" : "#fff",
+        color: "#111827",
+        cursor: "pointer",
+        fontWeight: 600,
+    };
+}
+
+const schedulerOverlay = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 23, 42, 0.36)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    zIndex: 1000,
+};
+
+const schedulerModal = {
+    width: "min(720px, 100%)",
+    background: "#fff",
+    borderRadius: 18,
+    padding: 20,
+    boxShadow: "0 22px 60px rgba(15, 23, 42, 0.22)",
+    border: "1px solid #e5e7eb",
+};
+
+const schedulerHeader = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "flex-start",
+};
+
+const schedulerEyebrow = {
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: "#0f766e",
+    marginBottom: 6,
+};
+
+const schedulerTitle = {
+    fontSize: 22,
+    fontWeight: 800,
+    color: "#111827",
+};
+
+const schedulerMeta = {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6b7280",
+};
+
+const schedulerSubhead = {
+    marginTop: 14,
+    fontSize: 13,
+    color: "#4b5563",
+};
+
+const schedulerDayGrid = {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 16,
+};
+
+const schedulerWeekNav = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 16,
+    flexWrap: "wrap",
+};
+
+const schedulerWeekLabel = {
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#111827",
+    minWidth: 160,
+    textAlign: "center",
+};
+
+const schedulerSlots = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: 10,
+    marginTop: 16,
+};
+
+const schedulerFooter = {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 18,
+};
+
+const iconBtn = {
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid #d1d5db",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 700,
+};
+
+const savedLine = {
+    marginTop: 12,
+    fontSize: 12,
+    color: "#6b7280",
+};
 ``

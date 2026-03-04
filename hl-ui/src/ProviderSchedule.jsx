@@ -236,9 +236,6 @@ function DesktopWeekGrid({
               />
             ))}
 
-            {!loading && day.appointments.length === 0 ? (
-              <div style={emptyDay}>Open</div>
-            ) : null}
           </div>
         ))}
       </div>
@@ -746,21 +743,6 @@ const appointmentMeta = {
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
-};
-
-const emptyDay = {
-  position: "absolute",
-  left: 12,
-  right: 12,
-  bottom: 12,
-  padding: "10px 12px",
-  borderRadius: 14,
-  border: "1px dashed #cbd5e1",
-  color: "#94a3b8",
-  fontSize: 12,
-  fontWeight: 700,
-  textAlign: "center",
-  background: "rgba(255,255,255,0.85)",
 };
 
 const mobileDayCard = {

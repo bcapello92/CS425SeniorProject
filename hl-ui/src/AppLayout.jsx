@@ -1,10 +1,12 @@
 // hl-ui/src/AppLayout.jsx
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./useAuth.jsx";
 
 export default function AppLayout({ children }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { loading, isAuthenticated, login, logout } = useAuth();
+  const isProviderRoute = location.pathname.startsWith("/provider");
 
   function goProvider() {
     if (isAuthenticated) {
@@ -15,7 +17,7 @@ export default function AppLayout({ children }) {
   }
 
   function doLogout() {
-    logout(); // logout already redirects to Cognito logout
+    logout();
   }
 
   return (
@@ -29,11 +31,17 @@ export default function AppLayout({ children }) {
           <button style={linkBtn} onClick={goProvider}>
             Provider
           </button>
+
+          {isProviderRoute ? (
+            <button style={homeBtn} onClick={() => navigate("/provider")}>
+              Provider Home
+            </button>
+          ) : null}
         </div>
 
         <div style={right}>
           {loading ? (
-            <span style={status}>Checking login…</span>
+            <span style={status}>Checking login...</span>
           ) : isAuthenticated ? (
             <>
               <span style={status}>Provider signed in</span>
@@ -54,7 +62,6 @@ export default function AppLayout({ children }) {
   );
 }
 
-/* ---- styles ---- */
 const header = {
   display: "flex",
   justifyContent: "space-between",
@@ -64,7 +71,7 @@ const header = {
   borderBottom: "1px solid #e7edf5",
 };
 
-const left = { display: "flex", gap: 10 };
+const left = { display: "flex", gap: 10, flexWrap: "wrap" };
 const right = { display: "flex", gap: 10, alignItems: "center" };
 
 const linkBtn = {
@@ -74,6 +81,17 @@ const linkBtn = {
   background: "#fff",
   cursor: "pointer",
   fontWeight: 600,
+  fontSize: 13,
+};
+
+const homeBtn = {
+  padding: "6px 10px",
+  borderRadius: 8,
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  cursor: "pointer",
+  fontWeight: 700,
   fontSize: 13,
 };
 
