@@ -1,8 +1,15 @@
 import React, { useState } from "react";
 import "./Chatbot.css";
 /*Wiem code start*/
-const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText = "Send" }) => {
+const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText = "Send", externalValue, inputRef }) => {
   const [input, setInput] = useState("");
+
+  // Update internal state when externalValue changes
+  React.useEffect(() => {
+    if (externalValue !== undefined) {
+      setInput(externalValue);
+    }
+  }, [externalValue]);
 
   const handleSend = () => {
     if (input.trim() !== "") {
@@ -20,6 +27,7 @@ const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText =
   return (
     <div className="chat-input">
       <input
+        ref={inputRef}
         type="text"
         placeholder={placeholder}
         value={input}

@@ -4,7 +4,7 @@ import ChatInput from "./ChatInput.jsx";
 import SymptomTimeline from "./SymptomTimeline.jsx";
 import SuggestionChips from "./SuggestionChips.jsx";
 import { triageClient } from "./triageClient";
-import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript } from "./ChatbotLogic";
+import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, getSmartSuggestions } from "./ChatbotLogic";
 import "./Chatbot.css";
 
 /*Wiem original code start*/
@@ -70,6 +70,7 @@ export default function PatientChatIntake() {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef(null);
+  const chatWindowRef = useRef(null);
 
   // ---------- timeline state ----------
   const [showTimeline, setShowTimeline] = useState(false);
@@ -80,10 +81,21 @@ export default function PatientChatIntake() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // ---------- editing state ----------
+  const [editingValue, setEditingValue] = useState(undefined);
+  const inputRef = useRef(null);
+
   const hasStartedChat = patientId !== null;
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const win = chatWindowRef.current;
+    if (!win) return;
+    const nearBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 150;
+    if (nearBottom) {
+      // Use scrollTop directly instead of scrollIntoView — scrollIntoView can
+      // scroll any ancestor (including the page), which pushes the nav off screen.
+      win.scrollTop = win.scrollHeight;
+    }
   }, [messages, isTyping]);
 
   function resetAll() {
@@ -93,7 +105,7 @@ export default function PatientChatIntake() {
     const ts = getTimestamp();
     setMessages([
       { sender: "bot", text: `${t.greeting}`, timestamp: ts },
-      { sender: "bot", text: t.entLocation, timestamp: ts },
+      { sender: "bot", text: t.entLocation, timestamp: ts, suggestions: getSmartSuggestions(t.entLocation, language) },
     ]);
     setIsTyping(false);
     setSubmitting(false);
@@ -124,6 +136,9 @@ export default function PatientChatIntake() {
 
   // ---------- Chat send ----------
   const handleUserMessage = (userInput) => {
+    // Reset editing value if we were editing
+    setEditingValue(undefined);
+
     sharedHandleUserMessage({
       userInput,
       patientId,
@@ -136,6 +151,22 @@ export default function PatientChatIntake() {
       getTimestamp,
       language // Pass language to backend
     });
+  };
+
+  const handleEditMessage = (index) => {
+    const msg = messages[index];
+    if (!msg || msg.sender !== "user") return;
+
+    // 1. Set the input value to the message being edited
+    setEditingValue(msg.text);
+
+    // 2. Truncate the messages array to remove everything from this message onwards
+    setMessages((prev) => prev.slice(0, index));
+
+    // 3. Focus the input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
   };
 
   // ---------- Send chat transcript for triage ----------
@@ -217,7 +248,7 @@ export default function PatientChatIntake() {
   // const canSendForTriage = hasStartedChat && !result && userMessageCount >= 2 && !submitting;
 
   return (
-    <div className="chatbot-wrapper">
+    <div className="chatbot-wrapper" style={{ position: "fixed", top: "50px", left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <header className="chatbot-header">
         <img src="/logo.png" alt="ENT Logo" className="logo" />
         <h1>ENT Patient Support Chatbot</h1>
@@ -281,7 +312,7 @@ export default function PatientChatIntake() {
               const ts = getTimestamp();
               setMessages([
                 { sender: "bot", text: t.greeting, timestamp: ts },
-                { sender: "bot", text: t.entLocation, timestamp: ts },
+                { sender: "bot", text: t.entLocation, timestamp: ts, suggestions: getSmartSuggestions(t.entLocation, language) },
               ]);
             }}
             style={buttonPrimary}
@@ -294,7 +325,7 @@ export default function PatientChatIntake() {
       {/* Chat window */}
       {hasStartedChat && (
         <>
-          <div className="chat-window">
+          <div className="chat-window" ref={chatWindowRef}>
             {messages.map((msg, index) => (
               <ChatMessage
                 key={index}
@@ -302,6 +333,7 @@ export default function PatientChatIntake() {
                 text={msg.text}
                 isHTML={msg.isHTML}
                 timestamp={msg.timestamp}
+                onEdit={msg.sender === "user" && !isTyping ? () => handleEditMessage(index) : null}
               />
             ))}
 
@@ -338,9 +370,9 @@ export default function PatientChatIntake() {
 
           {/* Only show input when triage not complete */}
           {!result && (
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", marginTop: 10, paddingBottom: 32 }}>
               {/* Suggestion Chips */}
-              {messages.length > 0 && messages[messages.length - 1].sender === "bot" && (
+              {messages.length > 0 && messages[messages.length - 1].sender === "bot" && !showTimeline && (
                 <SuggestionChips
                   suggestions={messages[messages.length - 1].suggestions}
                   onSelect={handleUserMessage}
@@ -353,6 +385,8 @@ export default function PatientChatIntake() {
                     onSend={handleUserMessage}
                     placeholder={t.inputPlaceholder}
                     buttonText={t.sendButton}
+                    externalValue={editingValue}
+                    inputRef={inputRef}
                   />
                 </div>
 

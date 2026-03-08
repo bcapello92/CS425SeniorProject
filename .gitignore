@@ -30,3 +30,12 @@ llama32_ent_triage_cls_lora_predictions_tau0_6.csv
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+Backend/healthlakeproxy/rbac.db-shm
+Backend/healthlakeproxy/rbac.db-wal
+Backend/healthlakeproxy/rbac.db-wal
+/Backend/healthlakeproxy/node_modules
+Backend/healthlakeproxy/rbac.db-wal
+Backend/healthlakeproxy/rbac.db-shm
+Backend/healthlakeproxy/rbac.db-shm
+Backend/healthlakeproxy/rbac.db-wal
+Backend/healthlakeproxy/rbac.db-shm

@@ -68,20 +68,22 @@ export const handleUserMessage = async ({
         // Detect if we should show timeline picker (English and Spanish)
         if (setShowTimeline && displayText) {
             const lowerText = displayText.toLowerCase();
-            const shouldShowTimeline =
-                // English phrases
-                (lowerText.includes("when") && lowerText.includes("start")) ||
-                (lowerText.includes("when") && lowerText.includes("begin")) ||
-                lowerText.includes("how long") ||
-                // Spanish phrases
-                (lowerText.includes("cuándo") && lowerText.includes("comenzó")) ||
-                (lowerText.includes("cuando") && lowerText.includes("comenzo")) || // without accent
-                (lowerText.includes("cuándo") && lowerText.includes("empezó")) ||
-                (lowerText.includes("cuando") && lowerText.includes("empezo")) || // without accent
-                lowerText.includes("cuánto tiempo") ||
-                lowerText.includes("cuanto tiempo");
+            const keywordMatch =
+                // English — onset only (when did it START, not how long it has been)
+                (lowerText.includes("when") && (
+                    lowerText.includes("start") || lowerText.includes("begin") ||
+                    lowerText.includes("onset") || lowerText.includes("occur") ||
+                    lowerText.includes("happen") || lowerText.includes("notice") ||
+                    lowerText.includes("appear") || lowerText.includes("first")
+                )) ||
+                lowerText.includes("since when") ||
+                // Spanish — onset only
+                (lowerText.includes("cuándo") && (lowerText.includes("comenzó") || lowerText.includes("empezó") || lowerText.includes("inicio") || lowerText.includes("apareció"))) ||
+                (lowerText.includes("cuando") && (lowerText.includes("comenzo") || lowerText.includes("empezo") || lowerText.includes("aparecio"))) ||
+                lowerText.includes("desde cuándo") ||
+                lowerText.includes("desde cuando");
 
-            if (shouldShowTimeline) {
+            if (keywordMatch) {
                 setShowTimeline(true);
             }
         }
@@ -130,9 +132,40 @@ export const getSmartSuggestions = (text, language = 'en') => {
 
     const isSpanish = language === 'es';
 
-    // Yes/No questions
-    if (lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") ||
-        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido")) {
+    // 1) Explicit Yes/No requests (like red flag screening)
+    if (lower.includes("(yes/no)") || lower.includes("(sí/no)") || lower.includes("(si/no)")) {
+        return isSpanish
+            ? ["Sí", "No", "No estoy seguro/a"]
+            : ["Yes", "No", "Not sure"];
+    }
+
+    // 1b) ENT location question — opening question about where symptoms are
+    if (
+        (lower.includes("ear") && lower.includes("nose") && lower.includes("throat")) ||
+        (lower.includes("oído") || lower.includes("oido")) && (lower.includes("nariz") || lower.includes("garganta"))
+    ) {
+        return isSpanish
+            ? ["Oído", "Nariz/Senos", "Garganta/Cuello", "Otro lugar"]
+            : ["Ear", "Nose/Sinuses", "Throat/Neck", "Elsewhere"];
+    }
+
+    // 2) General Yes/No questions
+    // Completion / confirmation question — always return Yes/No first
+    if (
+        (lower.includes("anything else") && (lower.includes("add") || lower.includes("share") || lower.includes("tell"))) ||
+        lower.includes("send this to the medical team") ||
+        lower.includes("enviar esto al equipo") ||
+        lower.includes("equipo médico") || lower.includes("equipo medico") ||
+        lower.includes("hay algo más") || lower.includes("hay algo mas") ||
+        lower.includes("algo más que") || lower.includes("algo mas que")
+    ) {
+        return isSpanish ? ["Sí", "No", "No estoy seguro/a"] : ["Yes", "No", "Not sure"];
+    }
+
+    if (
+        lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") ||
+        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido") || lower.includes("está ") || lower.includes("esta ")
+    ) {
         suggestions.push(
             isSpanish ? "Sí" : "Yes",
             isSpanish ? "No" : "No",
@@ -141,16 +174,23 @@ export const getSmartSuggestions = (text, language = 'en') => {
     }
 
     // Pain scale
-    if (lower.includes("scale") || lower.includes("1-10") || (lower.includes("pain") && lower.includes("bad")) ||
-        lower.includes("escala") || lower.includes("0-10") || (lower.includes("dolor") && lower.includes("grave"))) {
+    if (
+        lower.includes("scale") || lower.includes("1-10") || (lower.includes("pain") && lower.includes("bad")) ||
+        lower.includes("escala") || lower.includes("0-10") || lower.includes("severidad") ||
+        (lower.includes("dolor") && lower.includes("grave")) || (lower.includes("qué tan") && lower.includes("grave"))
+    ) {
         return isSpanish
             ? ["Leve (1-3)", "Moderado (4-6)", "Severo (7-10)"]
             : ["Mild (1-3)", "Moderate (4-6)", "Severe (7-10)"];
     }
 
     // Duration (if not covered by timeline picker, or as fallback)
-    if (lower.includes("how long") || lower.includes("duration") ||
-        lower.includes("cuánto tiempo") || lower.includes("cuanto tiempo") || lower.includes("duración")) {
+    if (
+        lower.includes("how long") || lower.includes("duration") ||
+        lower.includes("cuánto tiempo") || lower.includes("cuanto tiempo") ||
+        lower.includes("cuánto ha durado") || lower.includes("cuanto ha durado") ||
+        lower.includes("duración") || lower.includes("duracion")
+    ) {
         suggestions.push(
             isSpanish ? "Acaba de empezar" : "Just started",
             isSpanish ? "Unos días" : "A few days",
@@ -169,9 +209,12 @@ export const getSmartSuggestions = (text, language = 'en') => {
         );
     }
 
-    // Common ENT symptoms
-    if (lower.includes("symptoms") || lower.includes("else") ||
-        lower.includes("síntomas") || lower.includes("sintomas") || lower.includes("más") || lower.includes("otro")) {
+    // Common ENT symptoms — require 'symptom' co-occurrence so 'else' alone doesn't match
+    if (
+        lower.includes("symptom") || lower.includes("experiencing") ||
+        lower.includes("síntomas") || lower.includes("sintomas") ||
+        lower.includes("experimentando") || lower.includes("otro síntoma") || lower.includes("otro sintoma")
+    ) {
         suggestions.push(
             isSpanish ? "Dolor de garganta" : "Sore throat",
             isSpanish ? "Dolor de oído" : "Ear pain",

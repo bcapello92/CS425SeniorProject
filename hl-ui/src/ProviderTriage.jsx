@@ -89,7 +89,7 @@ export default function ProviderTriage() {
 
     async function setFlag(riskId, updates) {
         try {
-            await triageClient.setFlag(riskId, "bulk", updates);
+            await triageClient.setFlag(riskId, updates);
 
             // Update local detail state
             setDetail((prev) => {
@@ -587,6 +587,7 @@ export default function ProviderTriage() {
                                                                         <input
                                                                             type="datetime-local"
                                                                             value={flagUI[item.riskId].scheduled.at}
+                                                                            step={1800}
                                                                             onChange={(e) => {
                                                                                 const at = e.target.value;
                                                                                 setFlagUI((prev) => ({
@@ -599,6 +600,10 @@ export default function ProviderTriage() {
                                                                             }}
                                                                             style={{ padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
                                                                         />
+
+                                                                        <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                                                                            Available times: 8:00 AM to 4:00 PM in 30-minute slots.
+                                                                        </div>
 
                                                                         {flagUI[item.riskId].scheduled.error && (
                                                                             <div style={{ color: "crimson", marginTop: 6 }}>
@@ -640,7 +645,22 @@ export default function ProviderTriage() {
                                                                                     }
 
                                                                                     // datetime-local is local time; convert to ISO
-                                                                                    const apptIso = new Date(local).toISOString();
+                                                                                    const apptLocal = new Date(local);
+                                                                                    if (!isValidAppointmentSlot(apptLocal)) {
+                                                                                        setFlagUI((prev) => ({
+                                                                                            ...prev,
+                                                                                            [item.riskId]: {
+                                                                                                ...(prev[item.riskId] || {}),
+                                                                                                scheduled: {
+                                                                                                    ...ui,
+                                                                                                    error: "Appointments must be between 8:00 AM and 4:00 PM on the hour or half hour.",
+                                                                                                },
+                                                                                            },
+                                                                                        }));
+                                                                                        return;
+                                                                                    }
+
+                                                                                    const apptIso = apptLocal.toISOString();
 
                                                                                     setFlagUI((prev) => ({
                                                                                         ...prev,
@@ -790,6 +810,17 @@ function labelForColor(c) {
     if (c === "red") return "Severe";
     if (c === "orange") return "Moderate";
     return "Routine";
+}
+
+function isValidAppointmentSlot(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
+
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    if (minutes !== 0 && minutes !== 30) return false;
+    if (hours < 8 || hours > 16) return false;
+
+    return true;
 }
 
 function btn(kind) {

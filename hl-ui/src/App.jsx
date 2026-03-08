@@ -1,13 +1,20 @@
 ﻿// hl-ui/src/App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
-import AppLayout from "./AppLayoutFixed.jsx";
+import AppLayout from "./AppLayout.jsx";
 import PatientChatIntake from "./PatientChatIntake.jsx";
 import ProviderHome from "./ProviderHome.jsx";
 import ProviderTriage from "./ProviderTriage.jsx";
+import ProviderSchedule from "./ProviderSchedule.jsx";
 import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
+import ProviderAccount from "./ProviderAccount.jsx"
+import AdminHome from "./AdminHome.jsx";
+import AccountManagement from "./AccountManagment.jsx";
+import AdminAudit from "./AdminAudit.jsx";
 import { useAuth } from "./useAuth.jsx";
 import { useEffect } from "react";
+
+
 
 function Protected({ children }) {
   const { loading, isAuthenticated, login } = useAuth();
@@ -54,7 +61,53 @@ export default function App() {
             </Protected>
           }
         />
+        <Route
+          path="/provider/schedule"
+          element={
+            <Protected>
+              <ProviderSchedule />
+            </Protected>
+          }
+        />
+        <Route
+           path="/provider/account"
+           element={
+               <Protected>
+                <ProviderAccount/>
+               </Protected>
+           }
+              />
+              <Route
+                  path="/provider/account"
+                  element={
+                      <Protected>
+                          <ProviderAccount />
+                      </Protected>
+                  }
+              />
+              <Route
+                  path="/provider/admin"
+                  element={
+                      <Protected>
+                          <AdminHome />
+                      </Protected>
+                  }
+              />
+              <Route
+                  path="/provider/admin/accounts"
+                  element={
+                      <Protected><AccountManagement />
+                      </Protected>
+                  }
 
+              />
+              <Route
+                  path="/provider/admin/audit"
+                  element={
+                      <Protected><AdminAudit />
+                      </Protected>
+                  }
+              />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
