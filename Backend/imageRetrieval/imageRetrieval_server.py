@@ -80,7 +80,7 @@ def search_images(data: ImageRequest):
         location=location,
         side=side,
         top_k=3,
-        min_score=0.0,
+        min_score=0.60,
         search_k=50,
         use_mmap=True,
     )
