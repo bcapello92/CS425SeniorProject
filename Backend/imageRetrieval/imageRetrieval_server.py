@@ -69,21 +69,27 @@ def search_images(data: ImageRequest):
     search_text = make_text(data.answers)
     location = find_location(search_text)
     side = find_side(search_text)
-
-    result = search_topk_state(
-        index_dir=INDEX_DIR,
-        data_dir=DATA_DIR,
-        embed_model=EMBED_MODEL,
-        symptoms_text=search_text,
-        duration_text="",
-        comorbidities="",
-        location=location,
-        side=side,
-        top_k=3,
-        min_score=0.0,
-        search_k=50,
-        use_mmap=True,
-    )
+    try:
+        result = search_topk_state(
+            index_dir=INDEX_DIR,
+            data_dir=DATA_DIR,
+            embed_model=EMBED_MODEL,
+            symptoms_text=search_text,
+            duration_text="",
+            comorbidities="",
+            location=location,
+            side=side,
+            top_k=3,
+            min_score=0.0,
+            search_k=50,
+            use_mmap=True,
+        )
+    except Exception as e:
+        return {
+            "images": [],
+            "query": {"summary": search_text, "aligned_phrases": []},
+            "note": f"Image retrieval unavailable: {str(e)}",
+        }
 
     images = []
 

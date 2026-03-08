@@ -51,6 +51,13 @@ class TriageClient {
         );
     }
 
+    async getImageSuggestions(answers) {
+        return this._request("/api/triage-images", {
+            method: "POST",
+            body: { answers: Array.isArray(answers) ? answers : [] },
+        });
+    }
+
     async getScheduleWeek({ start }) {
         return this._request(
             `/api/provider/schedule-week?start=${encodeURIComponent(start)}`

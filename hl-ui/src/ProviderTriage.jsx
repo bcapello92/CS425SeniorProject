@@ -12,6 +12,8 @@ export default function ProviderTriage() {
     const [open, setOpen] = useState({});
     // details cache by riskId: { loading, error, data }
     const [detail, setDetail] = useState({});
+    // image suggestions cache by riskId: { loading, error, images }
+    const [caseImages, setCaseImages] = useState({});
     // extra info for contact+schedule flags
     const [flagUI, setFlagUI] = useState({});
     // inline override UI per riskId: { open, color, reason, saving, error }
@@ -51,6 +53,7 @@ export default function ProviderTriage() {
                     ...prev,
                     [riskId]: { loading: false, error: null, data: json },
                 }));
+                loadCaseImages(riskId, json?.answers || []);
             } catch (e) {
                 setDetail((prev) => ({
                     ...prev,
@@ -64,14 +67,42 @@ export default function ProviderTriage() {
         }
     }
 
+    async function loadCaseImages(riskId, answers) {
+        if (caseImages[riskId]) return;
+        setCaseImages((prev) => ({
+            ...prev,
+            [riskId]: { loading: true, error: null, images: [] },
+        }));
+        try {
+            const json = await triageClient.getImageSuggestions(answers || []);
+            setCaseImages((prev) => ({
+                ...prev,
+                [riskId]: {
+                    loading: false,
+                    error: null,
+                    images: Array.isArray(json?.images) ? json.images : [],
+                },
+            }));
+        } catch (e) {
+            setCaseImages((prev) => ({
+                ...prev,
+                [riskId]: {
+                    loading: false,
+                    error: e?.message || "Failed to load image suggestions",
+                    images: [],
+                },
+            }));
+        }
+    }
+
     // remove a case from the board immediately (client-side)
     function removeFromBoard(riskId) {
         setData((prev) => {
             if (!prev) return prev;
-            const oldGroups = prev.groups || { red: [], orange: [], yellow: [] };
-            const newGroups = { red: [], orange: [], yellow: [] };
+            const oldGroups = prev.groups || { red: [], orange: [], blue: [] };
+            const newGroups = { red: [], orange: [], blue: [] };
 
-            for (const col of ["red", "orange", "yellow"]) {
+            for (const col of ["red", "orange", "blue"]) {
                 newGroups[col] = (oldGroups[col] || []).filter((it) => it.riskId !== riskId);
             }
 
@@ -81,7 +112,7 @@ export default function ProviderTriage() {
                 counts: {
                     red: newGroups.red.length,
                     orange: newGroups.orange.length,
-                    yellow: newGroups.yellow.length,
+                    blue: newGroups.blue.length,
                 },
             };
         });
@@ -156,11 +187,11 @@ export default function ProviderTriage() {
             // 2) Move card between columns immediately
             setData((prev) => {
                 if (!prev) return prev;
-                const oldGroups = prev.groups || { red: [], orange: [], yellow: [] };
-                const newGroups = { red: [], orange: [], yellow: [] };
+                const oldGroups = prev.groups || { red: [], orange: [], blue: [] };
+                const newGroups = { red: [], orange: [], blue: [] };
 
                 // remove from all groups
-                for (const col of ["red", "orange", "yellow"]) {
+                for (const col of ["red", "orange", "blue"]) {
                     for (const it of oldGroups[col] || []) {
                         if (it.riskId === riskId) continue;
                         newGroups[col].push(it);
@@ -176,7 +207,7 @@ export default function ProviderTriage() {
                     counts: {
                         red: newGroups.red.length,
                         orange: newGroups.orange.length,
-                        yellow: newGroups.yellow.length,
+                        blue: newGroups.blue.length,
                     },
                 };
             });
@@ -198,7 +229,7 @@ export default function ProviderTriage() {
         }
     }
 
-    const groups = data?.groups || { red: [], orange: [], yellow: [] };
+    const groups = data?.groups || { red: [], orange: [], blue: [] };
 
     return (
         <div
@@ -248,9 +279,9 @@ export default function ProviderTriage() {
 
                 {!err && !loading && data && (
                     <div style={{ marginBottom: 12, color: "#555", textAlign: "center" }}>
-                        Since {new Date(data.since).toLocaleString()} — Totals: Severe{" "}
-                        {data.counts?.red || 0}, Moderate {data.counts?.orange || 0}, Routine{" "}
-                        {data.counts?.yellow || 0}
+                        Since {new Date(data.since).toLocaleString()} — Totals: Urgent{" "}
+                        {data.counts?.red || 0}, Semi-Routine {data.counts?.orange || 0}, Routine{" "}
+                        {data.counts?.blue || 0}
                     </div>
                 )}
 
@@ -261,7 +292,7 @@ export default function ProviderTriage() {
                         gap: 16,
                     }}
                 >
-                    {["red", "orange", "yellow"].map((color) => (
+                    {["red", "orange", "blue"].map((color) => (
                         <div
                             key={color}
                             style={{
@@ -288,6 +319,7 @@ export default function ProviderTriage() {
                                 {(groups[color] || []).map((item) => {
                                     const isOpen = !!open[item.riskId];
                                     const d = detail[item.riskId];
+                                    const imageState = caseImages[item.riskId];
                                     const override = overrideUI[item.riskId];
 
                                     // prefer detail color if loaded, else board color
@@ -366,6 +398,54 @@ export default function ProviderTriage() {
                                                                     </ul>
                                                                 </div>
                                                             )}
+
+                                                            <div style={{ fontSize: 14, marginTop: 10 }}>
+                                                                <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                                                                    Suggested reference images
+                                                                </div>
+                                                                {!imageState || imageState.loading ? (
+                                                                    <div style={{ color: "#666" }}>Loading image suggestions…</div>
+                                                                ) : imageState.error ? (
+                                                                    <div style={{ color: "crimson" }}>{imageState.error}</div>
+                                                                ) : !imageState.images?.length ? (
+                                                                    <div style={{ color: "#666" }}>No matching images found for this case.</div>
+                                                                ) : (
+                                                                    <div
+                                                                        style={{
+                                                                            display: "grid",
+                                                                            gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                                                                            gap: 10,
+                                                                        }}
+                                                                    >
+                                                                        {imageState.images.map((img) => (
+                                                                            <div
+                                                                                key={`${img.imageName}-${img.score}`}
+                                                                                style={{
+                                                                                    border: "1px solid #e5e7eb",
+                                                                                    borderRadius: 8,
+                                                                                    padding: 6,
+                                                                                    background: "#fff",
+                                                                                }}
+                                                                            >
+                                                                                <img
+                                                                                    src={img.imageUrl}
+                                                                                    alt={img.label || img.description || "Suggested medical reference"}
+                                                                                    style={{
+                                                                                        width: "100%",
+                                                                                        height: 100,
+                                                                                        objectFit: "cover",
+                                                                                        borderRadius: 6,
+                                                                                        background: "#f3f4f6",
+                                                                                    }}
+                                                                                />
+                                                                                <div style={{ marginTop: 4, fontSize: 12, color: "#4b5563" }}>
+                                                                                    {img.label || "Reference"}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
 
                                                             {/* 
                                                             {d.data.symptomStart && (
@@ -457,9 +537,9 @@ export default function ProviderTriage() {
                                                                         onChange={(e) => openOverrideEditor(item, currentColor, e.target.value)}
                                                                         style={{ marginLeft: 6 }}
                                                                     >
-                                                                        <option value="red">Severe (Red)</option>
-                                                                        <option value="orange">Moderate (Orange)</option>
-                                                                        <option value="yellow">Routine (Yellow)</option>
+                                                                        <option value="red">Urgent (Red)</option>
+                                                                        <option value="orange">Semi-Routine (Orange)</option>
+                                                                        <option value="blue">Routine (Blue)</option>
                                                                     </select>
                                                                 </span>
 
@@ -803,12 +883,12 @@ export default function ProviderTriage() {
 function colorBg(c) {
     if (c === "red") return "#dc2626";
     if (c === "orange") return "#ea580c";
-    return "#ca8a04"; // default / yellow
+    return "#1e40af"; // default / yello
 }
 
 function labelForColor(c) {
-    if (c === "red") return "Severe";
-    if (c === "orange") return "Moderate";
+    if (c === "red") return "Urgent";
+    if (c === "orange") return "Semi-Routine";
     return "Routine";
 }
 
@@ -834,4 +914,3 @@ function btn(kind) {
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
 }
-``

@@ -57,6 +57,8 @@ app.post("/api/auth/logout", (req, res) => {
 });
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
+const IMAGE_RETRIEVAL_URL =
+  process.env.IMAGE_RETRIEVAL_URL || "http://127.0.0.1:8001";
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
     patientId,
@@ -132,6 +134,46 @@ app.post("/api/patient-chat", async (req, res) => {
     res.status(500).json({ error: e?.message || String(e) });
   }
 });
+
+app.post(
+  "/api/triage-images",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+
+      const resp = await fetch(`${IMAGE_RETRIEVAL_URL}/search-images`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+
+      const contentType = resp.headers.get("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? await resp.json()
+        : { error: await resp.text() };
+
+      if (!resp.ok) {
+        const msg = data?.error || JSON.stringify(data);
+        return res
+          .status(resp.status)
+          .json({ error: `Image retrieval error ${resp.status}: ${msg}` });
+      }
+
+      return res.json({
+        images: Array.isArray(data?.images) ? data.images : [],
+        query: data?.query || null,
+        note: data?.note || null,
+      });
+    } catch (e) {
+      return res.status(502).json({
+        error: `Image retrieval service unavailable: ${e?.message || String(e)}`,
+      });
+    }
+  }
+);
 // ---------------------------------------------------------
 // COGNITO JWT AUTH (for provider routes) aws calls not original code
 // ---------------------------------------------------------
