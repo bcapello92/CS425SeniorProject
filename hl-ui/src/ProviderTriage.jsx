@@ -249,7 +249,7 @@ export default function ProviderTriage() {
                 {!err && !loading && data && (
                     <div style={{ marginBottom: 12, color: "#555", textAlign: "center" }}>
                         Since {new Date(data.since).toLocaleString()} — Totals: Severe{" "}
-                        {data.counts?.red || 0}, Moderate {data.counts?.orange || 0}, Routine{" "}
+                        {data.counts?.red || 0}, Semi-Routine {data.counts?.orange || 0}, Routine{" "}
                         {data.counts?.yellow || 0}
                     </div>
                 )}
@@ -458,8 +458,8 @@ export default function ProviderTriage() {
                                                                         style={{ marginLeft: 6 }}
                                                                     >
                                                                         <option value="red">Severe (Red)</option>
-                                                                        <option value="orange">Moderate (Orange)</option>
-                                                                        <option value="yellow">Routine (Yellow)</option>
+                                                                        <option value="orange">Semi-Routine (Orange)</option>
+                                                                        <option value="yellow">Routine (Blue)</option>
                                                                     </select>
                                                                 </span>
 
@@ -803,12 +803,12 @@ export default function ProviderTriage() {
 function colorBg(c) {
     if (c === "red") return "#dc2626";
     if (c === "orange") return "#ea580c";
-    return "#ca8a04"; // default / yellow
+    return "#1e40af"; // routine
 }
 
 function labelForColor(c) {
     if (c === "red") return "Severe";
-    if (c === "orange") return "Moderate";
+    if (c === "orange") return "Semi-Routine";
     return "Routine";
 }
 
@@ -834,4 +834,3 @@ function btn(kind) {
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
 }
-``

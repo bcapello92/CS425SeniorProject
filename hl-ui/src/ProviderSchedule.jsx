@@ -463,18 +463,18 @@ function formatTime(value) {
 function colorBg(color) {
   if (color === "red") return "#c2410c";
   if (color === "orange") return "#ea580c";
-  return "#ca8a04";
+  return "#1e40af";
 }
 
 function colorTint(color) {
   if (color === "red") return "#fff1f2";
   if (color === "orange") return "#fff7ed";
-  return "#fefce8";
+  return "#eff6ff";
 }
 
 function labelForColor(color) {
   if (color === "red") return "Severe";
-  if (color === "orange") return "Moderate";
+  if (color === "orange") return "Semi-Routine";
   return "Routine";
 }
 
