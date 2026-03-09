@@ -58,7 +58,8 @@ export const handleUserMessage = async ({
             ? reply.replace(/\[complete[_\s]intake\]/gi, "").trim()
             : reply;
 
-        // Add bot message
+        // Add bot message. Constructing message object of the chatbot's 
+        // response before adding it to the chat history array. This is to know how to draw the bubbles on
         const botMessage = {
             sender: "bot",
             text: displayText || "I understand. Could you tell me more about any other symptoms or how long this has been happening?",
@@ -69,17 +70,12 @@ export const handleUserMessage = async ({
         if (setShowTimeline && displayText) {
             const lowerText = displayText.toLowerCase();
             const keywordMatch =
-                // English — onset only (when did it START, not how long it has been)
-                (lowerText.includes("when") && (
-                    lowerText.includes("start") || lowerText.includes("begin") ||
-                    lowerText.includes("onset") || lowerText.includes("occur") ||
-                    lowerText.includes("happen") || lowerText.includes("notice") ||
-                    lowerText.includes("appear") || lowerText.includes("first")
-                )) ||
+                // English phrases (onset only)
+                (lowerText.includes("when") && (lowerText.includes("start") || lowerText.includes("begin") || lowerText.includes("onset"))) ||
                 lowerText.includes("since when") ||
-                // Spanish — onset only
+                // Spanish phrases
                 (lowerText.includes("cuándo") && (lowerText.includes("comenzó") || lowerText.includes("empezó") || lowerText.includes("inicio") || lowerText.includes("apareció"))) ||
-                (lowerText.includes("cuando") && (lowerText.includes("comenzo") || lowerText.includes("empezo") || lowerText.includes("aparecio"))) ||
+                (lowerText.includes("cuando") && (lowerText.includes("comenzo") || lowerText.includes("empezo") || lowerText.includes("aparecio"))) || // without accent
                 lowerText.includes("desde cuándo") ||
                 lowerText.includes("desde cuando");
 
@@ -104,16 +100,24 @@ export const handleUserMessage = async ({
         }
     } catch (err) {
         console.error("Chatbot logic error:", err);
+        const errorText = language === 'es'
+            ? "Tengo un poco de problemas para conectarme a mi cerebro conversacional en este momento. ¿Podría repetir eso o decirme cuándo comenzaron estos síntomas?"
+            : "I'm having a bit of trouble connecting to my brain right now. Could you repeat that or tell me when these symptoms first started?";
 
         // Graceful error handling in the chat UI
         setMessages((prev) => [
             ...prev,
             {
                 sender: "bot",
-                text: "I'm having a bit of trouble connecting to my brain right now. Could you repeat that or tell me when these symptoms first started?",
+                text: errorText,
                 timestamp: getTimestamp(),
             },
         ]);
+
+        // Auto-show timeline so gathering continues even if the model is offline
+        if (setShowTimeline) {
+            setShowTimeline(true);
+        }
     } finally {
         setIsTyping(false);
     }
@@ -149,83 +153,66 @@ export const getSmartSuggestions = (text, language = 'en') => {
             : ["Ear", "Nose/Sinuses", "Throat/Neck", "Elsewhere"];
     }
 
-    // 2) General Yes/No questions
-    // Completion / confirmation question — always return Yes/No first
-    if (
-        (lower.includes("anything else") && (lower.includes("add") || lower.includes("share") || lower.includes("tell"))) ||
-        lower.includes("send this to the medical team") ||
-        lower.includes("enviar esto al equipo") ||
-        lower.includes("equipo médico") || lower.includes("equipo medico") ||
-        lower.includes("hay algo más") || lower.includes("hay algo mas") ||
-        lower.includes("algo más que") || lower.includes("algo mas que")
-    ) {
-        return isSpanish ? ["Sí", "No", "No estoy seguro/a"] : ["Yes", "No", "Not sure"];
-    }
-
-    if (
-        lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") ||
-        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido") || lower.includes("está ") || lower.includes("esta ")
-    ) {
-        suggestions.push(
-            isSpanish ? "Sí" : "Yes",
-            isSpanish ? "No" : "No",
-            isSpanish ? "No estoy seguro/a" : "Not sure"
-        );
-    }
-
-    // Pain scale
-    if (
-        lower.includes("scale") || lower.includes("1-10") || (lower.includes("pain") && lower.includes("bad")) ||
-        lower.includes("escala") || lower.includes("0-10") || lower.includes("severidad") ||
-        (lower.includes("dolor") && lower.includes("grave")) || (lower.includes("qué tan") && lower.includes("grave"))
-    ) {
+    // 2) Pain scale (Severity) - Checked before general Yes/No to prevent override
+    if (lower.includes("scale") || lower.includes("1-10") || lower.includes("0-10") || (lower.includes("pain") && lower.includes("bad")) || lower.includes("pain level") ||
+        lower.includes("escala") || (lower.includes("dolor") && lower.includes("grave")) || lower.includes("gravedad") || lower.includes("severity")) {
         return isSpanish
             ? ["Leve (1-3)", "Moderado (4-6)", "Severo (7-10)"]
             : ["Mild (1-3)", "Moderate (4-6)", "Severe (7-10)"];
     }
 
-    // Duration (if not covered by timeline picker, or as fallback)
-    if (
-        lower.includes("how long") || lower.includes("duration") ||
-        lower.includes("cuánto tiempo") || lower.includes("cuanto tiempo") ||
-        lower.includes("cuánto ha durado") || lower.includes("cuanto ha durado") ||
-        lower.includes("duración") || lower.includes("duracion")
-    ) {
-        suggestions.push(
-            isSpanish ? "Acaba de empezar" : "Just started",
-            isSpanish ? "Unos días" : "A few days",
-            isSpanish ? "Más de una semana" : "Over a week",
-            isSpanish ? "Crónico/Largo plazo" : "Chronic/Long-term"
-        );
+    // 3) Red flags
+    if (lower.includes("trouble breathing") || lower.includes("vision changes") || lower.includes("stiff neck") ||
+        lower.includes("dificultad para respirar") || lower.includes("cambios en la visión") || lower.includes("rigidez")) {
+        return isSpanish
+            ? ["Sí", "No", "No estoy seguro/a"]
+            : ["Yes", "No", "Not sure"];
     }
 
-    // Fever specific
+    // 4) Final Confirmation
+    if (lower.includes("anything else you") || lower.includes("medical team") ||
+        lower.includes("algo más que") || lower.includes("equipo médico")) {
+        return isSpanish
+            ? ["No, eso es todo", "Sí, tengo más que agregar"]
+            : ["No, that's all", "Yes, I have more"];
+    }
+
+    // 5) Duration (if not covered by timeline picker, or as fallback)
+    if (lower.includes("how long") || lower.includes("duration") ||
+        lower.includes("cuánto tiempo") || lower.includes("cuanto tiempo") || lower.includes("duración") || lower.includes("cuánto ha") || lower.includes("cuanto ha") || lower.includes("durado")) {
+        return isSpanish
+            ? ["Acaba de empezar", "Unos días", "Más de una semana", "Crónico/Largo plazo"]
+            : ["Just started", "A few days", "Over a week", "Chronic/Long-term"];
+    }
+
+    // 6) Fever specific
     if (lower.includes("fever") || lower.includes("temperature") ||
         lower.includes("fiebre") || lower.includes("temperatura")) {
-        suggestions.push(
-            isSpanish ? "Sin fiebre" : "No fever",
-            isSpanish ? "Fiebre baja" : "Low grade",
-            isSpanish ? "Fiebre alta (>39°C)" : "High fever (>102°F)"
-        );
+        return isSpanish
+            ? ["Sin fiebre", "Fiebre baja", "Fiebre alta (>39°C)"]
+            : ["No fever", "Low grade", "High fever (>102°F)"];
     }
 
-    // Common ENT symptoms — require 'symptom' co-occurrence so 'else' alone doesn't match
+    // 7) General Yes/No fallback BEFORE checking vague terms like "symptoms"
     if (
-        lower.includes("symptom") || lower.includes("experiencing") ||
-        lower.includes("síntomas") || lower.includes("sintomas") ||
-        lower.includes("experimentando") || lower.includes("otro síntoma") || lower.includes("otro sintoma")
+        lower.includes("do you") || lower.includes("have you") || lower.includes("are you") || lower.includes("did you") || lower.includes("is there") ||
+        lower.includes("tiene") || lower.includes("siente") || lower.includes("ha sentido") || lower.includes("está ") || lower.includes("esta ") || lower.includes("hay algo")
     ) {
-        suggestions.push(
-            isSpanish ? "Dolor de garganta" : "Sore throat",
-            isSpanish ? "Dolor de oído" : "Ear pain",
-            isSpanish ? "Congestión" : "Congestion",
-            isSpanish ? "Tos" : "Cough",
-            isSpanish ? "Mareos" : "Dizziness"
-        );
+        return isSpanish
+            ? ["Sí", "No", "No estoy seguro/a"]
+            : ["Yes", "No", "Not sure"];
     }
 
-    // Limit to 4 suggestions max to avoid clutter
-    return suggestions.slice(0, 4);
+    // 8) Common ENT symptoms (Vague generic fallback)
+    if (lower.includes("symptoms") || lower.includes("else") ||
+        lower.includes("síntomas") || lower.includes("sintomas") || lower.includes("más") || lower.includes("otro")) {
+        return isSpanish
+            ? ["Dolor de garganta", "Dolor de oído", "Congestión", "Tos"]
+            : ["Sore throat", "Ear pain", "Congestion", "Cough"];
+    }
+
+    // Default fallback
+    return [];
 };
 
 /**
