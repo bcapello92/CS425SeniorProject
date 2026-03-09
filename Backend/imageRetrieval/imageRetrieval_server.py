@@ -57,12 +57,8 @@ def rebuild_index():
 def make_text(answers):
     parts = []
     for item in answers:
-        q = str(item.get("text", "")).strip()
         a = str(item.get("answer", "")).strip()
-
-        if q and a:
-            parts.append(f"{q}: {a}")
-        elif a:
+        if a:
             parts.append(a)
 
     return " | ".join(parts)

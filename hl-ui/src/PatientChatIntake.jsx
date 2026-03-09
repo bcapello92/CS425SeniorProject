@@ -4,7 +4,7 @@ import ChatInput from "./ChatInput.jsx";
 import SymptomTimeline from "./SymptomTimeline.jsx";
 import SuggestionChips from "./SuggestionChips.jsx";
 import { triageClient } from "./triageClient";
-import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, getSmartSuggestions } from "./ChatbotLogic";
+import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, buildAnswers, getSmartSuggestions } from "./ChatbotLogic";
 import "./Chatbot.css";
 
 
@@ -183,8 +183,7 @@ export default function PatientChatIntake() {
 
     const transcript = buildTranscript(messages);
 
-    // answers are optional; you can keep empty or derive later
-    const answers = [];
+    const answers = buildAnswers(messages);
 
     // add a visible status message
     const sendingMessage = language === 'es'

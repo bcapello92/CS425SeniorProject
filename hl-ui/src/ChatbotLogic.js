@@ -236,3 +236,28 @@ export const buildTranscript = (uiMessages) => {
         .map((m) => `${m.sender === "user" ? "Patient" : "Assistant"}: ${m.text}`)
         .join("\n");
 };
+
+export const buildAnswers = (uiMessages) => {
+    const answers = [];
+    let lastBotPrompt = "";
+
+    for (const message of uiMessages || []) {
+        const text = typeof message?.text === "string" ? message.text.trim() : "";
+        if (!text) continue;
+
+        if (message.sender === "bot") {
+            lastBotPrompt = text;
+            continue;
+        }
+
+        if (message.sender !== "user") continue;
+
+        answers.push({
+            linkId: `chat-${answers.length + 1}`,
+            text: lastBotPrompt || `Patient response ${answers.length + 1}`,
+            answer: text,
+        });
+    }
+
+    return answers;
+};
