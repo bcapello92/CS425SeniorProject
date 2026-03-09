@@ -16,6 +16,8 @@ export default function ProviderTriage() {
     const [flagUI, setFlagUI] = useState({});
     // inline override UI per riskId: { open, color, reason, saving, error }
     const [overrideUI, setOverrideUI] = useState({});
+    // image retrieval results by riskId: { loading, error, data }
+    const [imageResults, setImageResults] = useState({});
 
     async function loadBoard() {
         setLoading(true);
@@ -36,6 +38,32 @@ export default function ProviderTriage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    async function loadRelatedImages(riskId, answers) {
+        if (!riskId || imageResults[riskId]?.loading) return;
+
+        setImageResults((prev) => ({
+            ...prev,
+            [riskId]: { loading: true, error: null, data: null },
+        }));
+
+        try {
+            const json = await triageClient.searchRelatedImages({ answers });
+            setImageResults((prev) => ({
+                ...prev,
+                [riskId]: { loading: false, error: null, data: json },
+            }));
+        } catch (e) {
+            setImageResults((prev) => ({
+                ...prev,
+                [riskId]: {
+                    loading: false,
+                    error: e?.message || "Failed to load related images",
+                    data: null,
+                },
+            }));
+        }
+    }
+
     async function toggle(riskId) {
         const isOpening = !open[riskId];
         setOpen((prev) => ({ ...prev, [riskId]: isOpening }));
@@ -51,6 +79,7 @@ export default function ProviderTriage() {
                     ...prev,
                     [riskId]: { loading: false, error: null, data: json },
                 }));
+                loadRelatedImages(riskId, json?.answers || []);
             } catch (e) {
                 setDetail((prev) => ({
                     ...prev,
@@ -61,6 +90,8 @@ export default function ProviderTriage() {
                     },
                 }));
             }
+        } else if (isOpening && detail[riskId] && !imageResults[riskId]) {
+            loadRelatedImages(riskId, detail[riskId]?.data?.answers || []);
         }
     }
 
@@ -289,6 +320,7 @@ export default function ProviderTriage() {
                                     const isOpen = !!open[item.riskId];
                                     const d = detail[item.riskId];
                                     const override = overrideUI[item.riskId];
+                                    const imageState = imageResults[item.riskId];
 
                                     // prefer detail color if loaded, else board color
                                     const currentColor = d?.data?.color || item.color || color;
@@ -366,6 +398,70 @@ export default function ProviderTriage() {
                                                                     </ul>
                                                                 </div>
                                                             )}
+
+                                                            <div style={{ marginTop: 10 }}>
+                                                                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                                                                    Related images
+                                                                </div>
+
+                                                                {!imageState || imageState.loading ? (
+                                                                    <div style={{ fontSize: 13, color: "#666" }}>
+                                                                        Loading related images…
+                                                                    </div>
+                                                                ) : imageState.error ? (
+                                                                    <div style={{ fontSize: 13, color: "crimson" }}>
+                                                                        {imageState.error}
+                                                                    </div>
+                                                                ) : !(imageState.data?.images || []).length ? (
+                                                                    <div style={{ fontSize: 13, color: "#666" }}>
+                                                                        No matching images found.
+                                                                    </div>
+                                                                ) : (
+                                                                    <div
+                                                                        style={{
+                                                                            display: "grid",
+                                                                            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                                                                            gap: 8,
+                                                                        }}
+                                                                    >
+                                                                        {(imageState.data.images || []).map((img, idx) => (
+                                                                            <a
+                                                                                key={`${item.riskId}-img-${idx}`}
+                                                                                href={img.imageUrl}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                style={{
+                                                                                    display: "block",
+                                                                                    textDecoration: "none",
+                                                                                    color: "inherit",
+                                                                                    border: "1px solid #e5e7eb",
+                                                                                    borderRadius: 8,
+                                                                                    padding: 6,
+                                                                                    background: "#fff",
+                                                                                }}
+                                                                            >
+                                                                                <img
+                                                                                    src={img.imageUrl}
+                                                                                    alt={img.label || img.imageName || "related result"}
+                                                                                    style={{
+                                                                                        width: "100%",
+                                                                                        height: 96,
+                                                                                        objectFit: "cover",
+                                                                                        borderRadius: 6,
+                                                                                        background: "#f3f4f6",
+                                                                                    }}
+                                                                                />
+                                                                                <div style={{ fontSize: 12, marginTop: 6 }}>
+                                                                                    {img.label || img.imageName || "Image"}
+                                                                                </div>
+                                                                                <div style={{ fontSize: 11, color: "#666" }}>
+                                                                                    Score: {img.score ?? "n/a"}
+                                                                                </div>
+                                                                            </a>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
 
                                                             {/* 
                                                             {d.data.symptomStart && (

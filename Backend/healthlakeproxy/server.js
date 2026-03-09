@@ -57,6 +57,18 @@ app.post("/api/auth/logout", (req, res) => {
 });
 const MODEL_URL = process.env.MODEL_URL || "http://127.0.0.1:8000";
 const CHAT_SERVICE_URL=process.env.CHAT_SERVICE_URL || "http://localhost:8002";
+const rawImageRetrievalUrl =
+  process.env.IMAGE_RETRIEVAL_URL || "http://127.0.0.1:8001";
+const IMAGE_RETRIEVAL_URL =
+  rawImageRetrievalUrl.replace(/\/$/, "") === CHAT_SERVICE_URL.replace(/\/$/, "")
+    ? "http://127.0.0.1:8001"
+    : rawImageRetrievalUrl;
+
+if (IMAGE_RETRIEVAL_URL !== rawImageRetrievalUrl) {
+  console.warn(
+    `[WARN] IMAGE_RETRIEVAL_URL matched CHAT_SERVICE_URL (${rawImageRetrievalUrl}); falling back to ${IMAGE_RETRIEVAL_URL}`
+  );
+}
 async function callModelTriage({ patientId, answers, transcript }) {
   const payload = {
     patientId,
@@ -107,6 +119,21 @@ async function callModelTriage({ patientId, answers, transcript }) {
     throw err;
   }
 }
+
+function extractServiceError(data, fallback) {
+  if (typeof data === "string" && data.trim()) return data;
+  if (data?.error) return data.error;
+  if (data?.detail) {
+    if (typeof data.detail === "string") return data.detail;
+    try {
+      return JSON.stringify(data.detail);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 app.post("/api/patient-chat", async (req, res) => {
   try {
     const { messages } = req.body || {};
@@ -1061,6 +1088,71 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
+
+app.post(
+  "/api/provider/image-retrieval",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+      const base = String(IMAGE_RETRIEVAL_URL || "").replace(/\/$/, "");
+      const candidatePaths = [
+        "/search-images",
+        "/search-images/",
+        "/search_images",
+        "/search_images/",
+        "/api/search-images",
+        "/api/search_images",
+      ];
+
+      let lastStatus = 502;
+      let lastError = "";
+      let lastUrl = "";
+
+      for (const p of candidatePaths) {
+        const url = `${base}${p}`;
+        lastUrl = url;
+
+        const upstream = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ answers }),
+        });
+
+        const contentType = upstream.headers.get("content-type") || "";
+        const data = contentType.includes("application/json")
+          ? await upstream.json()
+          : { error: await upstream.text() };
+
+        if (upstream.ok) {
+          return res.json(data);
+        }
+
+        lastStatus = upstream.status || 502;
+        lastError = extractServiceError(
+          data,
+          `Image retrieval service request failed (${lastStatus})`
+        );
+
+        if (upstream.status !== 404) {
+          return res.status(upstream.status).json({
+            error: `${lastError} [url=${url}]`,
+          });
+        }
+      }
+
+      return res.status(lastStatus).json({
+        error: `${lastError} [lastTried=${lastUrl}]`,
+      });
+    } catch (e) {
+      return res.status(502).json({
+        error: e?.message || "Image retrieval service is unavailable",
+      });
+    }
+  }
+);
 
 app.get(
   "/api/provider/schedule-week",

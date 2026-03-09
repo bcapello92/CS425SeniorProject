@@ -1,24 +1,57 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
+import traceback
 
 from src.retrieval import search_topk_state
+from src.retrieval import clear_retrieval_cache
+from src.indexing import build_index
 
 app = FastAPI()
 
-DATA_DIR = os.getenv("IMAGE_DATA_DIR", "./data")
-INDEX_DIR = os.getenv("IMAGE_INDEX_DIR", "./index")
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
+WORKSPACE_PARENT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+
+DATA_DIR = os.getenv("IMAGE_DATA_DIR", WORKSPACE_PARENT)
+INDEX_DIR = os.getenv("IMAGE_INDEX_DIR", os.path.join(THIS_DIR, "index"))
 EMBED_MODEL = os.getenv("IMAGE_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 BASE_URL = os.getenv("IMAGE_BASE_URL", "http://127.0.0.1:8001")
 
 imgs_folder = os.path.join(DATA_DIR, "imgs")
+if not os.path.isdir(imgs_folder):
+    imgs_folder = os.path.join(DATA_DIR, "images")
 if os.path.isdir(imgs_folder):
     app.mount("/images", StaticFiles(directory=imgs_folder), name="images")
 
 
 class ImageRequest(BaseModel):
     answers: list[dict] = []
+
+
+def ensure_index_ready():
+    faiss_path = os.path.join(INDEX_DIR, "faiss.index")
+    meta_path = os.path.join(INDEX_DIR, "meta.jsonl")
+    if os.path.exists(faiss_path) and os.path.exists(meta_path):
+        return
+
+    build_index(
+        data_dir=DATA_DIR,
+        index_dir=INDEX_DIR,
+        embed_model=EMBED_MODEL,
+        build_region_indexes=True,
+    )
+
+
+def rebuild_index():
+    clear_retrieval_cache()
+    build_index(
+        data_dir=DATA_DIR,
+        index_dir=INDEX_DIR,
+        embed_model=EMBED_MODEL,
+        build_region_indexes=True,
+    )
 
 
 def make_text(answers):
@@ -66,24 +99,54 @@ def health():
 
 @app.post("/search-images")
 def search_images(data: ImageRequest):
-    search_text = make_text(data.answers)
-    location = find_location(search_text)
-    side = find_side(search_text)
+    try:
+        ensure_index_ready()
 
-    result = search_topk_state(
-        index_dir=INDEX_DIR,
-        data_dir=DATA_DIR,
-        embed_model=EMBED_MODEL,
-        symptoms_text=search_text,
-        duration_text="",
-        comorbidities="",
-        location=location,
-        side=side,
-        top_k=3,
-        min_score=0.60,
-        search_k=50,
-        use_mmap=True,
-    )
+        search_text = make_text(data.answers)
+        location = find_location(search_text)
+        side = find_side(search_text)
+
+        try:
+            result = search_topk_state(
+                index_dir=INDEX_DIR,
+                data_dir=DATA_DIR,
+                embed_model=EMBED_MODEL,
+                symptoms_text=search_text,
+                duration_text="",
+                comorbidities="",
+                location=location,
+                side=side,
+                top_k=3,
+                min_score=0.60,
+                search_k=50,
+                use_mmap=True,
+            )
+        except RuntimeError as exc:
+            if "Embedding dimension mismatch" not in str(exc):
+                raise
+            rebuild_index()
+            result = search_topk_state(
+                index_dir=INDEX_DIR,
+                data_dir=DATA_DIR,
+                embed_model=EMBED_MODEL,
+                symptoms_text=search_text,
+                duration_text="",
+                comorbidities="",
+                location=location,
+                side=side,
+                top_k=3,
+                min_score=0.60,
+                search_k=50,
+                use_mmap=True,
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Image retrieval failed. data_dir={DATA_DIR}, index_dir={INDEX_DIR}. "
+                f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+            ),
+        ) from exc
 
     images = []
 
