@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { triageClient } from "./triageClient";
 
 export default function ProviderTriage() {
+    // Main provider triage board state: board columns, expanded case detail, flag modal UI, and image lookup results.
     const [data, setData] = useState(null);
     const [hours, setHours] = useState(168);
     const [loading, setLoading] = useState(false);
@@ -20,6 +21,7 @@ export default function ProviderTriage() {
     // image retrieval results by riskId: { loading, error, data }
     const [imageResults, setImageResults] = useState({});
 
+    // Loads the current board summary from the backend for the selected lookback window.
     async function loadBoard() {
         setLoading(true);
         setErr(null);
@@ -39,6 +41,7 @@ export default function ProviderTriage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Fetches related reference images after a case detail payload is available.
     async function loadRelatedImages(riskId, answers) {
         if (!riskId || imageResults[riskId]?.loading) return;
 
@@ -65,6 +68,7 @@ export default function ProviderTriage() {
         }
     }
 
+    // Expands a case card, load detail once, and then kicks off related image retrieval.
     async function toggle(riskId) {
         const isOpening = !open[riskId];
         setOpen((prev) => ({ ...prev, [riskId]: isOpening }));
@@ -96,7 +100,7 @@ export default function ProviderTriage() {
         }
     }
 
-    // remove a case from the board immediately (client-side)
+    // Removes a case from the visible board once provider follow-up is complete.
     function removeFromBoard(riskId) {
         setData((prev) => {
             if (!prev) return prev;
@@ -119,6 +123,7 @@ export default function ProviderTriage() {
         });
     }
 
+    // Persists contacted/scheduled flags through the API and mirrors them into local state.
     async function setFlag(riskId, updates) {
         try {
             await triageClient.setFlag(riskId, updates);
@@ -148,6 +153,7 @@ export default function ProviderTriage() {
         }
     }
 
+    // Opens the contact modal and seeds the per-case form state.
     function openContactModal(item) {
         setFlagUI((prev) => ({
             ...prev,
@@ -164,6 +170,7 @@ export default function ProviderTriage() {
         setFlagModal({ type: "contact", riskId: item.riskId, patientName: item.patientName });
     }
 
+    // Opens the scheduling modal with the nearest valid week/day/time preselected.
     function openScheduleModal(item, detailData) {
         const weekGroups = getAppointmentWeekGroups(8);
         const currentValue = detailData?.flags?.appointmentAt ? toDateTimeLocalValue(detailData.flags.appointmentAt) : "";
@@ -188,10 +195,12 @@ export default function ProviderTriage() {
         setFlagModal({ type: "schedule", riskId: item.riskId, patientName: item.patientName });
     }
 
+    // Closes whichever flag modal is currently active.
     function closeFlagModal() {
         setFlagModal(null);
     }
 
+    // Saves provider contact metadata and marks the case as contacted.
     async function saveContactFlag(riskId) {
         const ui = flagUI[riskId]?.contact;
         if (!ui) return;
@@ -211,6 +220,7 @@ export default function ProviderTriage() {
         closeFlagModal();
     }
 
+    // Validates and stores the selected appointment slot for the case.
     async function saveScheduleFlag(riskId) {
         const ui = flagUI[riskId]?.scheduled;
         if (!ui?.at) {
@@ -252,7 +262,7 @@ export default function ProviderTriage() {
         closeFlagModal();
     }
 
-    // open override editor when provider selects a new color
+    // Opens the manual override editor when a provider changes the triage level.
     function openOverrideEditor(item, currentColor, newColor) {
         if (!newColor || newColor === currentColor) return;
 
@@ -268,6 +278,7 @@ export default function ProviderTriage() {
         }));
     }
 
+    // Persists a manual override, then updates both the expanded detail and board columns.
     async function saveOverride(item, newColor, reason) {
         const riskId = item.riskId;
 
@@ -320,7 +331,7 @@ export default function ProviderTriage() {
             // close editor
             setOverrideUI((prev) => ({ ...prev, [riskId]: { open: false } }));
 
-            // optional: refresh board to stay synced with backend truth
+            // refresh board to stay synced with backend truth
             loadBoard();
         } catch (e) {
             setOverrideUI((prev) => ({
@@ -580,11 +591,10 @@ export default function ProviderTriage() {
                                                                 )}
                                                             </div>
 
-                                                            {/* 
                                                             {d.data.symptomStart && (
                                                                 <div style={{ 
                                                                     marginTop: 8, 
-                                                                    padding: 8, 
+                                                                    padding: 8,
                                                                     background: "#eef2ff", 
                                                                     borderRadius: 6,
                                                                     border: "1px solid #c7d2fe",
@@ -600,8 +610,7 @@ export default function ProviderTriage() {
                                                                         </span>
                                                                     </div>
                                                                 </div>
-                                                            )} 
-                                                            */}
+                                                            )}
 
                                                             <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
                                                                 {/* CONTACTED */}
@@ -1024,6 +1033,7 @@ function labelForColor(c) {
     return "Routine";
 }
 
+// Scheduling helpers: constrain appointments to valid clinic slots and shape them into week/day/time selectors.
 function isValidAppointmentSlot(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
 

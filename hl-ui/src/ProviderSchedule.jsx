@@ -8,6 +8,7 @@ const SLOT_MINUTES = 30;
 const DESKTOP_ROW_HEIGHT = 56;
 
 export default function ProviderSchedule() {
+  // Weekly provider schedule state: selected week, fetched appointments, drag target, and save status.
   const navigate = useNavigate();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [loading, setLoading] = useState(false);
@@ -32,6 +33,7 @@ export default function ProviderSchedule() {
   useEffect(() => {
     let cancelled = false;
 
+    // Loads the server-backed schedule for the active week whenever week navigation changes.
     async function loadSchedule() {
       try {
         setLoading(true);
@@ -60,6 +62,7 @@ export default function ProviderSchedule() {
   const total = data?.total ?? 0;
   const weekLabel = useMemo(() => formatWeekLabel(weekStart), [weekStart]);
 
+  // Optimistically moves an appointment in the calendar, then persists the new slot to the backend.
   async function moveAppointment(riskId, nextLocalDate) {
     if (!data) return;
 
@@ -172,6 +175,7 @@ export default function ProviderSchedule() {
   );
 }
 
+// Desktop view renders the weekly grid and exposes drag targets for half-hour rescheduling.
 function DesktopWeekGrid({
   days,
   loading,
@@ -246,6 +250,7 @@ function DesktopWeekGrid({
   );
 }
 
+// Mobile view falls back to a simple agenda list without drag-and-drop interactions.
 function MobileAgenda({ days, loading }) {
   return (
     <div>
@@ -286,6 +291,7 @@ function MobileAgenda({ days, loading }) {
   );
 }
 
+// Individual scheduled appointment card used inside the desktop week grid.
 function AppointmentBlock({ item, isDragging, isSaving, onDragStart, onDragEnd }) {
   const startDate = new Date(item.appointmentAt);
   const minutes = startDate.getHours() * 60 + startDate.getMinutes();
@@ -319,6 +325,7 @@ function AppointmentBlock({ item, isDragging, isSaving, onDragStart, onDragEnd }
   );
 }
 
+// Date/time helpers keep the schedule aligned to Monday-based weeks and fixed half-hour slots.
 function shiftWeek(setter, days) {
   setter((prev) => {
     const next = new Date(prev);
@@ -383,6 +390,7 @@ function getSlotTop(slotIndex) {
   return slotIndex * (DESKTOP_ROW_HEIGHT / 2);
 }
 
+// Schedule update helper rewrites the cached weekly data after a drag/drop move succeeds locally.
 function updateAppointmentInSchedule(scheduleData, riskId, nextIso) {
   if (!scheduleData) return null;
 

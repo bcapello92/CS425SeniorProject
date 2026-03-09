@@ -6,7 +6,9 @@ const BASE =
 const CHAT_BASE =
   import.meta.env.VITE_CHAT_BASE?.replace(/\/$/, "") ||
   "http://localhost:8002";
+
 class TriageClient {
+    // Shared fetch wrapper for the authenticated app API. It normalizes JSON/text responses into thrown errors.
     async _request(path, { method = "GET", body } = {}) {
         const headers = {};
         if (body) headers["content-type"] = "application/json";
@@ -31,7 +33,7 @@ class TriageClient {
         return data;
     }
 
-    // ---------- EXISTING TRIAGE METHODS ----------
+    // Sends a completed patient intake payload to the backend so triage can be created and persisted.
 
     async submitIntake({ patientId, answers, transcript }) {
         return this._request("/api/intake", {
@@ -40,24 +42,28 @@ class TriageClient {
         });
     }
 
+    // Loads the provider board summary grouped by triage level over a recent time window.
     async getBoard({ sinceHours }) {
         return this._request(
             `/api/triage-cases?sinceHours=${encodeURIComponent(sinceHours)}`
         );
     }
 
+    // Loads the full detail for a single triage case when a provider expands it.
     async getDetail(riskId) {
         return this._request(
             `/api/triage-detail?riskId=${encodeURIComponent(riskId)}`
         );
     }
 
+    // Retrieves schedule data for a given week when provider scheduling needs backend availability.
     async getScheduleWeek({ start }) {
         return this._request(
             `/api/provider/schedule-week?start=${encodeURIComponent(start)}`
         );
     }
 
+    // Updates provider follow-up flags, either via a single key/value or a full partial update object.
     async setFlag(riskId, keyOrUpdates, value) {
         const body =
             keyOrUpdates && typeof keyOrUpdates === "object" && value === undefined
@@ -73,6 +79,7 @@ class TriageClient {
         );
     }
 
+    // Stores a provider override when the board triage level is manually changed.
     async setOverride(riskId, color, reason) {
         return this._request(
             `/api/triage-cases/${encodeURIComponent(riskId)}/override`,
@@ -83,6 +90,7 @@ class TriageClient {
         );
     }
 
+    // Requests case-specific related images using structured patient answers from the triage detail payload.
     async searchRelatedImages({ answers }) {
         return this._request("/api/provider/image-retrieval", {
             method: "POST",
@@ -91,8 +99,8 @@ class TriageClient {
     }
 
 }
-// ---------- CHAT FUNCTION (OLLAMA) ----------
 
+// Sends the live patient chat transcript to the separate chat service used during intake.
 export async function sendChat(messages) {
   const res = await fetch(`${CHAT_BASE}/chat`, {
     method: "POST",
