@@ -3,9 +3,9 @@ import json
 
 import numpy as np
 import faiss
-from sentence_transformers import SentenceTransformer
 
 from .dataset import build_docs
+from .embedder import get_embedder
 
 
 def write_jsonl(rows, out_path):
@@ -44,7 +44,7 @@ def build_index(
     if not docs:
         raise RuntimeError("No docs built. Check data_dir and make sure imgs/ + json files exist.")
 
-    embedder = SentenceTransformer(embed_model)
+    embedder = get_embedder(embed_model)
 
     first_bs = min(stream_batch_size, len(docs))
     first_texts = [d["desc"] for d in docs[:first_bs]]

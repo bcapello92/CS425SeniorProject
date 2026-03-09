@@ -131,8 +131,7 @@ export default function ProviderAccount() {
       <div style={{ ...card, borderColor: "#fecaca", marginTop: 14 }}>
         <div style={dangerTitle}>Delete Account</div>
         <div style={hintDanger}>
-          This disables your local app account and attempts to remove your Cognito user.
-          This action is intended to be irreversible.
+          Deleting your account is non-reversible and will revoke access to provider pages.
         </div>
 
         <label style={label}>Type DELETE to confirm</label>
