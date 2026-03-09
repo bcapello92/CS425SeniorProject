@@ -24,7 +24,8 @@ class TriageClient {
             : { error: await res.text() };
 
         if (!res.ok || data.error) {
-            throw new Error(data.error || `HTTP ${res.status}`);
+            const message = data.error || `HTTP ${res.status}`;
+            throw new Error(`HTTP ${res.status}: ${message}`);
         }
 
         return data;
@@ -80,6 +81,13 @@ class TriageClient {
                 body: { color, reason },
             }
         );
+    }
+
+    async searchRelatedImages({ answers }) {
+        return this._request("/api/provider/image-retrieval", {
+            method: "POST",
+            body: { answers: Array.isArray(answers) ? answers : [] },
+        });
     }
 
 }

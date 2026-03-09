@@ -2,7 +2,7 @@ const OLLAMA_CHAT_BASE =
   import.meta.env.VITE_OLLAMA_CHAT_BASE?.replace(/\/$/, "") ||
   "http://localhost:8002";
 
-export async function sendChat(messages) {
+export async function sendChat(messages, language = 'en') {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 60000); // 60s timeout (allows for Ollama cold start)
 
@@ -10,7 +10,7 @@ export async function sendChat(messages) {
     const res = await fetch(`${OLLAMA_CHAT_BASE}/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, language }), // Include language in request
       signal: controller.signal,
     });
 

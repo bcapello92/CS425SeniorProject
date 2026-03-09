@@ -1,0 +1,23 @@
+data_dir: "/home/team20-2026/data/ENT_img_dataset/train"
+index_dir: "/home/team20-2026/data/indexes/entrep_rag_simple"
+embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+build:
+  stream_batch_size: 2048
+  index_type: "flat"    
+  hnsw_m: 32
+  hnsw_ef_construction: 200
+  hnsw_ef_search: 64
+  build_region_indexes: true
+
+search:
+  top_k: 3
+  min_score: 0.60
+  search_k: 50
+  use_mmap: true
+  symptoms_text: ""
+  duration_text: ""
+  comorbidities: ""
+  location: ""
+  side: ""
+  quiet: false

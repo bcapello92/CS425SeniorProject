@@ -10,6 +10,7 @@ export default function ProviderTriage() {
 
     // open/close map by riskId
     const [open, setOpen] = useState({});
+<<<<<<< HEAD
     // details cache by riskId: { loading, error, data }
     const [detail, setDetail] = useState({});
     // extra info for contact+schedule flags
@@ -17,6 +18,16 @@ export default function ProviderTriage() {
     const [flagModal, setFlagModal] = useState(null);
     // inline override UI per riskId: { open, color, reason, saving, error }
     const [overrideUI, setOverrideUI] = useState({});
+=======
+    // details cache by riskId: { loading, error, data }
+    const [detail, setDetail] = useState({});
+    // extra info for contact+schedule flags
+    const [flagUI, setFlagUI] = useState({});
+    // inline override UI per riskId: { open, color, reason, saving, error }
+    const [overrideUI, setOverrideUI] = useState({});
+    // image retrieval results by riskId: { loading, error, data }
+    const [imageResults, setImageResults] = useState({});
+>>>>>>> main
 
     async function loadBoard() {
         setLoading(true);
@@ -37,6 +48,32 @@ export default function ProviderTriage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    async function loadRelatedImages(riskId, answers) {
+        if (!riskId || imageResults[riskId]?.loading) return;
+
+        setImageResults((prev) => ({
+            ...prev,
+            [riskId]: { loading: true, error: null, data: null },
+        }));
+
+        try {
+            const json = await triageClient.searchRelatedImages({ answers });
+            setImageResults((prev) => ({
+                ...prev,
+                [riskId]: { loading: false, error: null, data: json },
+            }));
+        } catch (e) {
+            setImageResults((prev) => ({
+                ...prev,
+                [riskId]: {
+                    loading: false,
+                    error: e?.message || "Failed to load related images",
+                    data: null,
+                },
+            }));
+        }
+    }
+
     async function toggle(riskId) {
         const isOpening = !open[riskId];
         setOpen((prev) => ({ ...prev, [riskId]: isOpening }));
@@ -52,6 +89,7 @@ export default function ProviderTriage() {
                     ...prev,
                     [riskId]: { loading: false, error: null, data: json },
                 }));
+                loadRelatedImages(riskId, json?.answers || []);
             } catch (e) {
                 setDetail((prev) => ({
                     ...prev,
@@ -62,6 +100,8 @@ export default function ProviderTriage() {
                     },
                 }));
             }
+        } else if (isOpening && detail[riskId] && !imageResults[riskId]) {
+            loadRelatedImages(riskId, detail[riskId]?.data?.answers || []);
         }
     }
 
@@ -382,7 +422,7 @@ export default function ProviderTriage() {
                 {!err && !loading && data && (
                     <div style={{ marginBottom: 12, color: "#555", textAlign: "center" }}>
                         Since {new Date(data.since).toLocaleString()} — Totals: Severe{" "}
-                        {data.counts?.red || 0}, Moderate {data.counts?.orange || 0}, Routine{" "}
+                        {data.counts?.red || 0}, Semi-Routine {data.counts?.orange || 0}, Routine{" "}
                         {data.counts?.yellow || 0}
                     </div>
                 )}
@@ -418,11 +458,19 @@ export default function ProviderTriage() {
                             </div>
 
                             <div style={{ padding: 10, maxHeight: 520, overflow: "auto" }}>
+<<<<<<< HEAD
                                 {(groups[color] || []).map((item) => {
                                     const isOpen = !!open[item.riskId];
                                     const d = detail[item.riskId];
                                     const override = overrideUI[item.riskId];
                                     const flags = d?.data?.flags || {};
+=======
+                                {(groups[color] || []).map((item) => {
+                                    const isOpen = !!open[item.riskId];
+                                    const d = detail[item.riskId];
+                                    const override = overrideUI[item.riskId];
+                                    const imageState = imageResults[item.riskId];
+>>>>>>> main
 
                                     // prefer detail color if loaded, else board color
                                     const currentColor = d?.data?.color || item.color || color;
@@ -501,6 +549,93 @@ export default function ProviderTriage() {
                                                                 </div>
                                                             )}
 
+                                                            <div style={{ marginTop: 10 }}>
+                                                                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                                                                    Related images
+                                                                </div>
+
+                                                                {!imageState || imageState.loading ? (
+                                                                    <div style={{ fontSize: 13, color: "#666" }}>
+                                                                        Loading related images…
+                                                                    </div>
+                                                                ) : imageState.error ? (
+                                                                    <div style={{ fontSize: 13, color: "crimson" }}>
+                                                                        {imageState.error}
+                                                                    </div>
+                                                                ) : !(imageState.data?.images || []).length ? (
+                                                                    <div style={{ fontSize: 13, color: "#666" }}>
+                                                                        No matching images found.
+                                                                    </div>
+                                                                ) : (
+                                                                    <div
+                                                                        style={{
+                                                                            display: "grid",
+                                                                            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                                                                            gap: 8,
+                                                                        }}
+                                                                    >
+                                                                        {(imageState.data.images || []).map((img, idx) => (
+                                                                            <a
+                                                                                key={`${item.riskId}-img-${idx}`}
+                                                                                href={img.imageUrl}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                style={{
+                                                                                    display: "block",
+                                                                                    textDecoration: "none",
+                                                                                    color: "inherit",
+                                                                                    border: "1px solid #e5e7eb",
+                                                                                    borderRadius: 8,
+                                                                                    padding: 6,
+                                                                                    background: "#fff",
+                                                                                }}
+                                                                            >
+                                                                                <img
+                                                                                    src={img.imageUrl}
+                                                                                    alt={img.label || img.imageName || "related result"}
+                                                                                    style={{
+                                                                                        width: "100%",
+                                                                                        height: 96,
+                                                                                        objectFit: "cover",
+                                                                                        borderRadius: 6,
+                                                                                        background: "#f3f4f6",
+                                                                                    }}
+                                                                                />
+                                                                                <div style={{ fontSize: 12, marginTop: 6 }}>
+                                                                                    {img.label || img.imageName || "Image"}
+                                                                                </div>
+                                                                                <div style={{ fontSize: 11, color: "#666" }}>
+                                                                                    Score: {img.score ?? "n/a"}
+                                                                                </div>
+                                                                            </a>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {/* 
+                                                            {d.data.symptomStart && (
+                                                                <div style={{ 
+                                                                    marginTop: 8, 
+                                                                    padding: 8, 
+                                                                    background: "#eef2ff", 
+                                                                    borderRadius: 6,
+                                                                    border: "1px solid #c7d2fe",
+                                                                    fontSize: 14
+                                                                }}>
+                                                                    <div style={{ fontWeight: 600, color: "#3730a3", display: "flex", alignItems: "center", gap: 6 }}>
+                                                                        <span>⏰ Symptom Onset</span>
+                                                                    </div>
+                                                                    <div style={{ marginTop: 2 }}>
+                                                                        {d.data.symptomStart.humanReadable} 
+                                                                        <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 6 }}>
+                                                                            ({new Date(d.data.symptomStart.timestamp).toLocaleDateString()})
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )} 
+                                                            */}
+
                                                             <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
                                                                 {/* CONTACTED */}
                                                                 <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -565,11 +700,250 @@ export default function ProviderTriage() {
                                                                         style={{ marginLeft: 6 }}
                                                                     >
                                                                         <option value="red">Severe (Red)</option>
+<<<<<<< HEAD
                                                                         <option value="orange">Moderate (Orange)</option>
                                                                         <option value="yellow">Routine (Yellow)</option>
                                                                     </select>
                                                                 </span>
                                                             </div>
+=======
+                                                                        <option value="orange">Semi-Routine (Orange)</option>
+                                                                        <option value="yellow">Routine (Blue)</option>
+                                                                    </select>
+                                                                </span>
+
+                                                                {/* CONTACT PROMPT */}
+                                                                {flagUI[item.riskId]?.contact?.open && (
+                                                                    <div
+                                                                        style={{
+                                                                            width: "100%",
+                                                                            marginTop: 10,
+                                                                            padding: 10,
+                                                                            background: "#fff",
+                                                                            borderRadius: 8,
+                                                                            border: "1px solid #e5e7eb",
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ fontWeight: 700, marginBottom: 6 }}>How did you contact the patient?</div>
+
+                                                                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                                                            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                                                                Method:
+                                                                                <select
+                                                                                    value={flagUI[item.riskId].contact.method}
+                                                                                    onChange={(e) => {
+                                                                                        const method = e.target.value;
+                                                                                        setFlagUI((prev) => ({
+                                                                                            ...prev,
+                                                                                            [item.riskId]: {
+                                                                                                ...(prev[item.riskId] || {}),
+                                                                                                contact: { ...prev[item.riskId].contact, method },
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="phone">Phone</option>
+                                                                                    <option value="email">Email</option>
+                                                                                </select>
+                                                                            </label>
+
+                                                                            <input
+                                                                                type="text"
+                                                                                placeholder="Optional note (e.g., left voicemail)"
+                                                                                value={flagUI[item.riskId].contact.note}
+                                                                                onChange={(e) => {
+                                                                                    const note = e.target.value;
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { ...prev[item.riskId].contact, note },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                                style={{ flex: 1, minWidth: 220, padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
+                                                                            />
+                                                                        </div>
+
+                                                                        {flagUI[item.riskId].contact.error && (
+                                                                            <div style={{ color: "crimson", marginTop: 6 }}>
+                                                                                {flagUI[item.riskId].contact.error}
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                                                                            <button
+                                                                                style={btn("secondary")}
+                                                                                onClick={() => {
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
+
+                                                                            <button
+                                                                                style={btn("primary")}
+                                                                                disabled={!!flagUI[item.riskId].contact.saving}
+                                                                                onClick={async () => {
+                                                                                    const ui = flagUI[item.riskId].contact;
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: { ...(prev[item.riskId] || {}), contact: { ...ui, saving: true } },
+                                                                                    }));
+
+                                                                                    await setFlag(item.riskId, {
+                                                                                        contacted: true,
+                                                                                        contactMethod: ui.method,
+                                                                                        contactNote: ui.note || null,
+                                                                                        contactedAt: new Date().toISOString(),
+                                                                                    });
+
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            contact: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* SCHEDULE PROMPT */}
+                                                                {flagUI[item.riskId]?.scheduled?.open && (
+                                                                    <div
+                                                                        style={{
+                                                                            width: "100%",
+                                                                            marginTop: 10,
+                                                                            padding: 10,
+                                                                            background: "#fff",
+                                                                            borderRadius: 8,
+                                                                            border: "1px solid #e5e7eb",
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ fontWeight: 700, marginBottom: 6 }}>When is the appointment?</div>
+
+                                                                        <input
+                                                                            type="datetime-local"
+                                                                            value={flagUI[item.riskId].scheduled.at}
+                                                                            step={1800}
+                                                                            onChange={(e) => {
+                                                                                const at = e.target.value;
+                                                                                setFlagUI((prev) => ({
+                                                                                    ...prev,
+                                                                                    [item.riskId]: {
+                                                                                        ...(prev[item.riskId] || {}),
+                                                                                        scheduled: { ...prev[item.riskId].scheduled, at },
+                                                                                    },
+                                                                                }));
+                                                                            }}
+                                                                            style={{ padding: 6, borderRadius: 8, border: "1px solid #ddd" }}
+                                                                        />
+
+                                                                        <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                                                                            Available times: 8:00 AM to 4:00 PM in 30-minute slots.
+                                                                        </div>
+
+                                                                        {flagUI[item.riskId].scheduled.error && (
+                                                                            <div style={{ color: "crimson", marginTop: 6 }}>
+                                                                                {flagUI[item.riskId].scheduled.error}
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                                                                            <button
+                                                                                style={btn("secondary")}
+                                                                                onClick={() => {
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            scheduled: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
+
+                                                                            <button
+                                                                                style={btn("primary")}
+                                                                                disabled={!!flagUI[item.riskId].scheduled.saving}
+                                                                                onClick={async () => {
+                                                                                    const ui = flagUI[item.riskId].scheduled;
+                                                                                    const local = (ui.at || "").trim();
+                                                                                    if (!local) {
+                                                                                        setFlagUI((prev) => ({
+                                                                                            ...prev,
+                                                                                            [item.riskId]: {
+                                                                                                ...(prev[item.riskId] || {}),
+                                                                                                scheduled: { ...ui, error: "Please select a date/time." },
+                                                                                            },
+                                                                                        }));
+                                                                                        return;
+                                                                                    }
+
+                                                                                    // datetime-local is local time; convert to ISO
+                                                                                    const apptLocal = new Date(local);
+                                                                                    if (!isValidAppointmentSlot(apptLocal)) {
+                                                                                        setFlagUI((prev) => ({
+                                                                                            ...prev,
+                                                                                            [item.riskId]: {
+                                                                                                ...(prev[item.riskId] || {}),
+                                                                                                scheduled: {
+                                                                                                    ...ui,
+                                                                                                    error: "Appointments must be between 8:00 AM and 4:00 PM on the hour or half hour.",
+                                                                                                },
+                                                                                            },
+                                                                                        }));
+                                                                                        return;
+                                                                                    }
+
+                                                                                    const apptIso = apptLocal.toISOString();
+
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: { ...(prev[item.riskId] || {}), scheduled: { ...ui, saving: true, error: null } },
+                                                                                    }));
+
+                                                                                    await setFlag(item.riskId, {
+                                                                                        scheduled: true,
+                                                                                        appointmentAt: apptIso,
+                                                                                    });
+
+                                                                                    setFlagUI((prev) => ({
+                                                                                        ...prev,
+                                                                                        [item.riskId]: {
+                                                                                            ...(prev[item.riskId] || {}),
+                                                                                            scheduled: { open: false },
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Optional: show what’s saved */}
+                                                                        {!!d.data?.flags?.appointmentAt && (
+                                                                            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                                                                                Saved appointment: {new Date(d.data.flags.appointmentAt).toLocaleString()}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+>>>>>>> main
 
 
                                                             {/* Inline override editor */}
@@ -789,6 +1163,7 @@ export default function ProviderTriage() {
 function colorBg(c) {
     if (c === "red") return "#dc2626";
     if (c === "orange") return "#ea580c";
+<<<<<<< HEAD
     return "#ca8a04"; // default / yellow
 }
 
@@ -829,9 +1204,14 @@ function ModalShell({ title, children, onClose }) {
     );
 }
 
+=======
+    return "#1e40af"; // routine
+}
+
+>>>>>>> main
 function labelForColor(c) {
     if (c === "red") return "Severe";
-    if (c === "orange") return "Moderate";
+    if (c === "orange") return "Semi-Routine";
     return "Routine";
 }
 
@@ -864,6 +1244,7 @@ function btn(kind) {
         border: "1px solid #ddd",
         cursor: "pointer",
         fontSize: 13,
+<<<<<<< HEAD
     };
     if (kind === "primary") return { ...base, background: "#e7f3ff" };
     return { ...base, background: "#fff" };
@@ -907,3 +1288,9 @@ function prevSlotValue(options, value) {
     if (!value) return "";
     return options.some((option) => option.value === value) ? value : "";
 }
+=======
+    };
+    if (kind === "primary") return { ...base, background: "#e7f3ff" };
+    return { ...base, background: "#fff" };
+}
+>>>>>>> main

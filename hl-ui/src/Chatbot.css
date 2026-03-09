@@ -44,10 +44,27 @@ html {
     margin: 0;
     overflow: hidden;
     /* Prevent scroll on the page level */
+    overscroll-behavior: none;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: var(--bg-gradient);
     background-size: 400% 400%;
     animation: gradientShift 15s ease infinite;
+}
+
+/* Lock the React root and AppLayout containers */
+#root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+main {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 @keyframes gradientShift {
@@ -72,8 +89,9 @@ html {
     display: flex;
     flex-direction: column;
     flex: 1;
-    /* Grow to fill the main container */
     height: 100%;
+    min-height: 0;
+    /* allows flex children to shrink and scroll */
     width: 100%;
     margin: 0;
     background: var(--glass-bg);
@@ -84,7 +102,6 @@ html {
     overflow: hidden;
     position: relative;
     border-radius: 0;
-    /* Remove border radius for full screen feel */
 }
 
 @media (max-width: 768px) {
@@ -155,6 +172,8 @@ html {
 
 .chat-window {
     flex: 1;
+    min-height: 0;
+    /* key: lets this flex child cap its height and scroll */
     padding: 24px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -163,6 +182,7 @@ html {
     gap: 16px;
     background: rgba(255, 255, 255, 0.5);
     scroll-behavior: smooth;
+    overscroll-behavior: contain; /* stops scroll propagating to the page */
 }
 
 /* Custom scrollbar */
@@ -247,6 +267,39 @@ html {
     margin-top: 4px;
     display: block;
     text-align: right;
+}
+
+/* Message edit button */
+.message-edit-btn {
+    position: absolute;
+    left: -32px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--white);
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: var(--transition-fast);
+    box-shadow: var(--shadow-sm);
+    z-index: 2;
+}
+
+.message-user:hover .message-edit-btn {
+    opacity: 1;
+    left: -36px;
+}
+
+.message-edit-btn:hover {
+    background: var(--primary-gradient);
+    color: var(--white);
+    transform: translateY(-50%) scale(1.1);
 }
 
 /* ============================================
@@ -485,6 +538,75 @@ html {
     line-height: 1.6;
 }
 
+
 .severity-container strong {
     color: var(--primary-color);
+}
+
+/* Suggestion Chips */
+.suggestion-chips-container {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    /* Smooth scrolling on iOS */
+    margin-bottom: 8px;
+    /* Space above input */
+    scrollbar-width: thin;
+    /* Firefox */
+}
+
+.suggestion-chips-container::-webkit-scrollbar {
+    height: 4px;
+}
+
+.suggestion-chips-container::-webkit-scrollbar-thumb {
+    background-color: #ddd;
+    border-radius: 4px;
+}
+
+.suggestion-chip {
+    background: #eef2ff;
+    color: #4f46e5;
+    border: 1px solid #c7d2fe;
+    padding: 6px 12px;
+    border-radius: 16px;
+    /* Pill shape */
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    /* Prevent shrinking */
+}
+
+.suggestion-chip:hover {
+    background: #e0e7ff;
+    border-color: #a5b4fc;
+    transform: translateY(-1px);
+}
+
+.suggestion-chip:active {
+    background: #c7d2fe;
+    transform: translateY(0);
+}
+
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
+.progress-container {
+    height: 4px;
+    background-color: rgba(0, 0, 0, 0.05);
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--success-gradient);
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(79, 172, 254, 0.5);
 }
