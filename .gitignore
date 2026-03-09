@@ -39,3 +39,7 @@ Backend/healthlakeproxy/rbac.db-shm
 Backend/healthlakeproxy/rbac.db-shm
 Backend/healthlakeproxy/rbac.db-wal
 Backend/healthlakeproxy/rbac.db-shm
+Backend/healthlakeproxy/rbac.db-wal
+Backend/healthlakeproxy/rbac.db
+Backend/healthlakeproxy/rbac.db-wal
+/Backend/imageRetrieval/src/__pycache__
