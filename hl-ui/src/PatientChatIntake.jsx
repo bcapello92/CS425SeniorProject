@@ -7,6 +7,9 @@ import { triageClient } from "./triageClient";
 import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, getSmartSuggestions } from "./ChatbotLogic";
 import "./Chatbot.css";
 
+
+
+
 /*Wiem original code start*/
 
 // Translation dictionary for UI text
@@ -170,6 +173,7 @@ export default function PatientChatIntake() {
   };
 
   // ---------- Send chat transcript for triage ----------
+  
   async function sendForTriage() {
     if (!patientId) return;
     if (submitting) return;
@@ -195,7 +199,7 @@ export default function PatientChatIntake() {
       const data = await triageClient.submitIntake({
         patientId,
         answers,
-        transcript: buildTranscript(messages), // Pass the structured timeline data
+        transcript: buildTranscript(messages),
         symptomOnset
       });
 
