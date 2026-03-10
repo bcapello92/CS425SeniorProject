@@ -531,6 +531,19 @@ export default function ProviderTriage() {
                                                                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
                                                                     Related images
                                                                 </div>
+                                                                <div
+                                                                    style={{
+                                                                        fontSize: 12,
+                                                                        color: "#991b1b",
+                                                                        background: "#fff1f2",
+                                                                        border: "1px solid #fecaca",
+                                                                        borderRadius: 8,
+                                                                        padding: "8px 10px",
+                                                                        marginBottom: 8,
+                                                                    }}
+                                                                >
+                                                                    These images are shown only to provide visual references. They are not the patient's images and do not confirm any diagnosis.
+                                                                </div>
 
                                                                 {!imageState || imageState.loading ? (
                                                                     <div style={{ fontSize: 13, color: "#666" }}>
@@ -545,49 +558,80 @@ export default function ProviderTriage() {
                                                                         No matching images found.
                                                                     </div>
                                                                 ) : (
-                                                                    <div
-                                                                        style={{
-                                                                            display: "grid",
-                                                                            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                                                                            gap: 8,
-                                                                        }}
-                                                                    >
-                                                                        {(imageState.data.images || []).map((img, idx) => (
-                                                                            <a
-                                                                                key={`${item.riskId}-img-${idx}`}
-                                                                                href={img.imageUrl}
-                                                                                target="_blank"
-                                                                                rel="noreferrer"
+                                                                    <>
+                                                                        {(imageState.data?.note || hasVisibleFields(imageState.data?.query)) && (
+                                                                            <div
                                                                                 style={{
-                                                                                    display: "block",
-                                                                                    textDecoration: "none",
-                                                                                    color: "inherit",
                                                                                     border: "1px solid #e5e7eb",
                                                                                     borderRadius: 8,
-                                                                                    padding: 6,
+                                                                                    padding: 10,
                                                                                     background: "#fff",
+                                                                                    marginBottom: 8,
                                                                                 }}
                                                                             >
-                                                                                <img
-                                                                                    src={img.imageUrl}
-                                                                                    alt={img.label || img.imageName || "related result"}
+                                                                                {imageState.data?.note ? (
+                                                                                    <div style={{ fontSize: 12, marginBottom: hasVisibleFields(imageState.data?.query) ? 8 : 0 }}>
+                                                                                        <b>Note:</b> {imageState.data.note}
+                                                                                    </div>
+                                                                                ) : null}
+                                                                                {hasVisibleFields(imageState.data?.query) ? (
+                                                                                    <div style={{ fontSize: 12 }}>
+                                                                                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Query details</div>
+                                                                                        {renderFieldList(imageState.data.query)}
+                                                                                    </div>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div
+                                                                            style={{
+                                                                                display: "grid",
+                                                                                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                                                                                gap: 8,
+                                                                            }}
+                                                                        >
+                                                                            {(imageState.data.images || []).map((img, idx) => (
+                                                                                <div
+                                                                                    key={`${item.riskId}-img-${idx}`}
                                                                                     style={{
-                                                                                        width: "100%",
-                                                                                        height: 96,
-                                                                                        objectFit: "cover",
-                                                                                        borderRadius: 6,
-                                                                                        background: "#f3f4f6",
+                                                                                        border: "1px solid #e5e7eb",
+                                                                                        borderRadius: 8,
+                                                                                        padding: 8,
+                                                                                        background: "#fff",
                                                                                     }}
-                                                                                />
-                                                                                <div style={{ fontSize: 12, marginTop: 6 }}>
-                                                                                    {img.label || img.imageName || "Image"}
+                                                                                >
+                                                                                    {img.imageUrl ? (
+                                                                                        <a
+                                                                                            href={img.imageUrl}
+                                                                                            target="_blank"
+                                                                                            rel="noreferrer"
+                                                                                            style={{
+                                                                                                display: "block",
+                                                                                                textDecoration: "none",
+                                                                                                color: "inherit",
+                                                                                            }}
+                                                                                        >
+                                                                                            <img
+                                                                                                src={img.imageUrl}
+                                                                                                alt={img.label || img.imageName || "related result"}
+                                                                                                style={{
+                                                                                                    width: "100%",
+                                                                                                    height: 120,
+                                                                                                    objectFit: "cover",
+                                                                                                    borderRadius: 6,
+                                                                                                    background: "#f3f4f6",
+                                                                                                }}
+                                                                                            />
+                                                                                        </a>
+                                                                                    ) : null}
+                                                                                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, marginBottom: 6 }}>
+                                                                                        {img.label || img.imageName || `Image ${idx + 1}`}
+                                                                                    </div>
+                                                                                    {renderFieldList(img)}
                                                                                 </div>
-                                                                                <div style={{ fontSize: 11, color: "#666" }}>
-                                                                                    Score: {img.score ?? "n/a"}
-                                                                                </div>
-                                                                            </a>
-                                                                        ))}
-                                                                    </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </>
                                                                 )}
                                                             </div>
 
@@ -1144,6 +1188,56 @@ function findDayForValue(days, value) {
 function pickSlotValue(slots, value) {
     if (!value) return "";
     return slots.some((slot) => slot.value === value) ? value : "";
+}
+
+function hasVisibleFields(value) {
+    return Object.entries(value || {}).some(([, fieldValue]) => {
+        if (fieldValue === null || fieldValue === undefined || fieldValue === "") return false;
+        if (Array.isArray(fieldValue)) return fieldValue.length > 0;
+        return true;
+    });
+}
+
+function renderFieldList(value) {
+    const entries = Object.entries(value || {}).filter(([, fieldValue]) => {
+        if (fieldValue === null || fieldValue === undefined || fieldValue === "") return false;
+        if (Array.isArray(fieldValue)) return fieldValue.length > 0;
+        return true;
+    });
+
+    if (!entries.length) return <div style={{ fontSize: 12, color: "#666" }}>No additional details.</div>;
+
+    return (
+        <div style={{ display: "grid", gap: 4 }}>
+            {entries.map(([key, fieldValue]) => {
+                const isUrl = typeof fieldValue === "string" && /^https?:\/\//i.test(fieldValue);
+                const displayValue =
+                    typeof fieldValue === "object"
+                        ? JSON.stringify(fieldValue)
+                        : String(fieldValue);
+
+                return (
+                    <div key={key} style={{ fontSize: 12, lineHeight: 1.4, wordBreak: "break-word" }}>
+                        <b>{formatFieldLabel(key)}:</b>{" "}
+                        {isUrl ? (
+                            <a href={fieldValue} target="_blank" rel="noreferrer">
+                                {fieldValue}
+                            </a>
+                        ) : (
+                            displayValue
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function formatFieldLabel(value) {
+    return String(value || "")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/^./, (char) => char.toUpperCase());
 }
 
 function btn(kind) {
