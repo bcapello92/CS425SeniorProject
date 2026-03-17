@@ -6,6 +6,7 @@ const START_HOUR = 8;
 const END_HOUR = 17;
 const SLOT_MINUTES = 30;
 const DESKTOP_ROW_HEIGHT = 56;
+const APPOINTMENT_CARD_HEIGHT = 60;
 
 export default function ProviderSchedule() {
   // Weekly provider schedule state: selected week, fetched appointments, drag target, and save status.
@@ -189,7 +190,7 @@ function DesktopWeekGrid({
   onDayDrop,
 }) {
   return (
-    <div>
+    <div style={gridViewport}>
       <div style={gridShell}>
         <div style={timeHeaderCell} />
         {days.map((day) => (
@@ -501,7 +502,9 @@ function chip(color) {
 }
 
 const page = {
-  minHeight: "100vh",
+  height: "100%",
+  minHeight: 0,
+  overflowY: "auto",
   background:
     "linear-gradient(180deg, rgba(234,244,255,0.9) 0%, rgba(246,248,251,1) 22%, rgba(255,255,255,1) 100%)",
   padding: "8px 0 32px",
@@ -634,16 +637,24 @@ const calendarShell = {
   maxWidth: 1240,
   margin: "0 auto",
   padding: "0 18px",
+  overflowX: "auto",
 };
 
 const gridShell = {
   display: "grid",
   gridTemplateColumns: "88px repeat(7, minmax(150px, 1fr))",
+  minWidth: 1138,
   border: "1px solid #dbe5f4",
   borderRadius: 26,
   overflow: "hidden",
   background: "#ffffff",
   boxShadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
+};
+
+const gridViewport = {
+  maxHeight: "calc(100vh - 260px)",
+  overflow: "auto",
+  paddingBottom: 8,
 };
 
 const timeHeaderCell = {
@@ -700,7 +711,7 @@ const dayColumn = {
   borderLeft: "1px solid #edf2f7",
   background:
     "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(248,250,252,0.65) 100%)",
-  minHeight: `${(END_HOUR - START_HOUR) * DESKTOP_ROW_HEIGHT}px`,
+  minHeight: `${(END_HOUR - START_HOUR) * DESKTOP_ROW_HEIGHT + APPOINTMENT_CARD_HEIGHT}px`,
 };
 
 const hourSlot = {

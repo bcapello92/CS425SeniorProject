@@ -126,8 +126,13 @@ export default function AdminAudit() {
                     <div style={dateStamp}>{formatAuditDate(row.at)}</div>
                   </div>
                   <div>
-                    <div style={primaryText}>{row.email || "Unknown actor"}</div>
-                    <div style={secondaryText}>Membership {row.actor_membership_id || "-"}</div>
+                    <div style={primaryText}>{row.display_name || row.email || "Unknown actor"}</div>
+                    <div style={secondaryText}>
+                      {row.display_name && row.email ? row.email : `Membership ${row.actor_membership_id || "-"}`}
+                    </div>
+                    {row.display_name ? (
+                      <div style={tertiaryText}>Membership {row.actor_membership_id || "-"}</div>
+                    ) : null}
                   </div>
                   <div>
                     <span style={actionPill(row.action)}>{formatActionLabel(row.action)}</span>
@@ -137,7 +142,9 @@ export default function AdminAudit() {
                     <div style={secondaryText}>{row.resource_id || "-"}</div>
                   </div>
                   <div style={detailsCell}>
-                    <pre style={detailsPre}>{formatDetails(row)}</pre>
+                    <div style={detailsBox}>
+                      {renderDetails(row)}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -169,15 +176,152 @@ function formatActionLabel(action) {
 }
 
 function formatDetails(row) {
-  const details = row?.details;
-  if (details && Object.keys(details).length > 0) {
-    try {
-      return JSON.stringify(details, null, 2);
-    } catch {
-      return String(row.details_json || "-");
-    }
+  const parsed = parseDetails(row?.details_json);
+  if (parsed && typeof parsed === "object") return parsed;
+  return null;
+}
+
+function renderDetails(row) {
+  const details = formatDetails(row);
+  const lines = describeAuditDetails(row, details);
+
+  if (!lines.length) {
+    return <div style={detailLine}>No additional details.</div>;
   }
-  return row?.details_json || "-";
+
+  return (
+    <div style={detailsList}>
+      {lines.map((line, index) => (
+        <div key={`${row.id}-detail-${index}`} style={detailLine}>
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function describeAuditDetails(row, details) {
+  const action = String(row?.action || "");
+
+  if (action === "triage.override") {
+    const nextColor = details?.color ? formatTriageColor(details.color) : "Unknown";
+    return [
+      `Triage changed to ${nextColor}.`,
+      details?.reason ? `Reason: ${details.reason}` : null,
+    ].filter(Boolean);
+  }
+
+  if (action === "triage.flag.update") {
+    const updates = details?.updates && typeof details.updates === "object" ? details.updates : details;
+    if (!updates || typeof updates !== "object") return [];
+
+    const lines = [];
+    if ("contacted" in updates) {
+      lines.push(updates.contacted ? "Marked as contacted." : "Marked as not contacted.");
+    }
+    if ("scheduled" in updates) {
+      lines.push(updates.scheduled ? "Marked as scheduled." : "Marked as not scheduled.");
+    }
+    if (updates.contactMethod) {
+      lines.push(`Contact method: ${formatValue(updates.contactMethod)}`);
+    }
+    if (updates.contactNote) {
+      lines.push(`Contact note: ${formatValue(updates.contactNote)}`);
+    }
+    if (updates.appointmentAt) {
+      lines.push(`Appointment: ${formatDateTime(updates.appointmentAt)}`);
+    }
+    if (updates.contactedAt) {
+      lines.push(`Contacted at: ${formatDateTime(updates.contactedAt)}`);
+    }
+    return lines.length ? lines : describeObjectFallback(updates);
+  }
+
+  if (action === "member.invite") {
+    return [
+      details?.email ? `Invited ${details.email}.` : null,
+      details?.suggested_role ? `Suggested role: ${formatValue(details.suggested_role)}` : null,
+      details?.note ? `Note: ${details.note}` : null,
+    ].filter(Boolean);
+  }
+
+  if (action === "member.approve") {
+    const roles = Array.isArray(details?.roles) ? details.roles.join(", ") : null;
+    return [
+      details?.membership_id ? `Approved membership ${details.membership_id}.` : null,
+      roles ? `Assigned roles: ${roles}` : null,
+    ].filter(Boolean);
+  }
+
+  if (action === "member.disable") {
+    return [
+      details?.membership_id ? `Disabled membership ${details.membership_id}.` : null,
+    ].filter(Boolean);
+  }
+
+  if (action === "account.profile.update") {
+    return [
+      "Updated account profile.",
+      details?.displayName ? `Display name: ${details.displayName}` : "Display name cleared or unchanged.",
+    ];
+  }
+
+  if (action === "account.delete") {
+    return ["Deleted account."];
+  }
+
+  return describeObjectFallback(details);
+}
+
+function describeObjectFallback(details) {
+  if (!details || typeof details !== "object") return [];
+  return Object.entries(details)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => `${formatFieldLabel(key)}: ${formatValue(value)}`);
+}
+
+function parseDetails(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function formatTriageColor(value) {
+  const color = String(value || "").toLowerCase();
+  if (color === "red") return "Severe";
+  if (color === "orange") return "Semi-Routine";
+  if (color === "yellow") return "Routine";
+  return formatValue(value);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatValue(value);
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatFieldLabel(value) {
+  return String(value || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatValue(value) {
+  if (Array.isArray(value)) return value.map((item) => formatValue(item)).join(", ");
+  if (value && typeof value === "object") return Object.entries(value).map(([key, entry]) => `${formatFieldLabel(key)} ${formatValue(entry)}`).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
 }
 
 function formatAuditTime(value) {
@@ -383,19 +527,33 @@ const secondaryText = {
   overflowWrap: "anywhere",
 };
 
+const tertiaryText = {
+  marginTop: 2,
+  fontSize: 11,
+  color: "#94a3b8",
+  overflowWrap: "anywhere",
+};
+
 const detailsCell = {
   minWidth: 0,
 };
 
-const detailsPre = {
-  margin: 0,
+const detailsBox = {
   padding: 10,
   borderRadius: 12,
   background: "#f8fafc",
   border: "1px solid #e2e8f0",
-  fontFamily: "Consolas, Monaco, monospace",
-  fontSize: 11,
+};
+
+const detailsList = {
+  display: "grid",
+  gap: 6,
+};
+
+const detailLine = {
+  padding: 10,
+  paddingLeft: 0,
+  fontSize: 12,
   lineHeight: 1.5,
-  whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
 };

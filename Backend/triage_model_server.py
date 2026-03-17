@@ -6,12 +6,14 @@ from deidentify_triage import _scrub_text_quick, age_bucket_hipaa, scrub_triage_
 
 import torch
 import json
+import torch.nn.functional as F
 
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"
 
 # Tune these for CPU speed
 MAX_TRANSCRIPT_CHARS = 2000
 MAX_NEW_TOKENS = 96
+TRIAGE_LABELS = ["red", "orange", "yellow"]
 
 app = FastAPI()
 
@@ -223,20 +225,24 @@ Transcript:
     return system_prompt, user_prompt
 
 
-def run_model(system_prompt: str, user_prompt: str) -> str:
+def build_generation_prompt(system_prompt: str, user_prompt: str) -> str:
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
 
     if hasattr(tokenizer, "apply_chat_template"):
-        prompt = tokenizer.apply_chat_template(
+        return tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
         )
-    else:
-        prompt = f"{system_prompt}\n\n{user_prompt}\n\nJSON:"
+
+    return f"{system_prompt}\n\n{user_prompt}\n\nJSON:"
+
+
+def run_model(system_prompt: str, user_prompt: str) -> str:
+    prompt = build_generation_prompt(system_prompt, user_prompt)
 
     enc = tokenizer(prompt, return_tensors="pt")
     input_ids = enc["input_ids"].to(model.device)
@@ -264,6 +270,46 @@ def run_model(system_prompt: str, user_prompt: str) -> str:
 
     text = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
     return text
+
+
+def sequence_logprob(prompt: str, completion: str) -> float | None:
+    full_text = prompt + completion
+    prompt_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(model.device)
+    full_ids = tokenizer(full_text, return_tensors="pt")["input_ids"].to(model.device)
+
+    if full_ids.shape[-1] <= prompt_ids.shape[-1]:
+        return None
+
+    with torch.inference_mode():
+        outputs = model(full_ids)
+        log_probs = F.log_softmax(outputs.logits[:, :-1, :].float(), dim=-1)
+
+    total = 0.0
+    prompt_len = prompt_ids.shape[-1]
+    for pos in range(prompt_len, full_ids.shape[-1]):
+        target_token_id = full_ids[0, pos].item()
+        total += log_probs[0, pos - 1, target_token_id].item()
+
+    return float(total)
+
+
+def score_triage_labels(system_prompt: str, user_prompt: str):
+    prompt = build_generation_prompt(system_prompt, user_prompt)
+    prefix = '{"color":"'
+    scores = []
+
+    for label in TRIAGE_LABELS:
+        score = sequence_logprob(prompt, prefix + label + '"')
+        scores.append(score if score is not None else float("-inf"))
+
+    scores_tensor = torch.tensor(scores, dtype=torch.float32)
+    probs_tensor = torch.softmax(scores_tensor, dim=0)
+    label_probs = {
+        label: float(prob)
+        for label, prob in zip(TRIAGE_LABELS, probs_tensor.tolist())
+    }
+    best_label = TRIAGE_LABELS[int(torch.argmax(scores_tensor).item())]
+    return best_label, label_probs.get(best_label, 0.0), label_probs
 
 
 def extract_first_json_object(text: str) -> str | None:
@@ -311,6 +357,8 @@ def triage(payload: IntakePayload):
     system_prompt, user_prompt = build_prompt(payload)
     raw_output = run_model(system_prompt, user_prompt)
     color, rationale = extract_json_color_and_rationale(raw_output)
+    scored_label, scored_confidence, label_probs = score_triage_labels(system_prompt, user_prompt)
+    used_fallback = False
 
     # scrub transcript snippet before logging
     raw_snippet = (payload.transcript or "").replace("\n", " ")[:200]
@@ -320,6 +368,7 @@ def triage(payload: IntakePayload):
     print("Transcript snippet:", scrubbed_snippet)
     print("RAW MODEL OUTPUT:", repr(raw_output))
     print("PARSED:", {"color": color, "rationale": rationale})
+    print("CONFIDENCE:", {"best_label": scored_label, "best_confidence": scored_confidence, "label_probs": label_probs})
     print("======================\n")
 
     if rationale and not rationale_is_grounded(rationale, payload):
@@ -328,13 +377,23 @@ def triage(payload: IntakePayload):
         color = None
 
     if not color:
+        used_fallback = True
         color, rationale = keyword_fallback(payload)
         print("USING FALLBACK:", {"color": color, "rationale": rationale})
 
     if color not in ("red", "orange", "yellow"):
         color = "yellow"
 
-    return {"color": color, "rationale": rationale}
+    final_confidence = label_probs.get(color)
+    return {
+        "color": color,
+        "rationale": rationale,
+        "used_fallback": used_fallback,
+        "model_color": scored_label,
+        "confidence": scored_confidence,
+        "final_confidence": final_confidence,
+        "label_probs": label_probs,
+    }
 
 
 if __name__ == "__main__":
