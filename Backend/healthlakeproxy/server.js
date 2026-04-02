@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -31,9 +31,22 @@ import {
 } from "./rbac_db.js";
 
 const app = express();
-app.use(cors({ origin: ["http://localhost:5173"], 
-credentials: true,
-}));
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -1265,7 +1278,7 @@ app.get(
 );
 
 // ---------------------------------------------------------
-// FLAGS (contacted/scheduled etc.) – PROTECTED
+// FLAGS (contacted/scheduled etc.) - PROTECTED
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/flags",
@@ -1329,7 +1342,7 @@ app.patch(
 );
 /*Need to fix later on. Dont use alert can crash system*/
 // ---------------------------------------------------------
-// OVERRIDE COLOR – PROTECTED 
+// OVERRIDE COLOR - PROTECTED 
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/override",

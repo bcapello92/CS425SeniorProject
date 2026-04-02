@@ -178,3 +178,66 @@ npm run dev
 - HealthLake proxy: `http://localhost:4000`
 - Triage API: `http://localhost:8000`
 - Ollama service: `http://localhost:8002`
+
+## VM Hosting
+
+The VM reverse proxy is configured to expose whatever is listening on `0.0.0.0:8080` at:
+
+- `https://enttriage.unr.dev/`
+
+Recommended deployment pattern on the VM:
+
+1. Keep backend services private on localhost:
+   - HealthLake proxy on `127.0.0.1:4000`
+   - Triage API on `127.0.0.1:8000`
+   - Ollama chat service on `127.0.0.1:8002`
+2. Run the Vite frontend on `0.0.0.0:8080`
+3. Let the Vite dev server proxy browser requests from `/api` to `127.0.0.1:4000`
+
+Frontend env on the VM (`hl-ui/.env.local`):
+
+```powershell
+VITE_PUBLIC_ORIGIN=https://enttriage.unr.dev
+VITE_API_BASE=/api
+VITE_CHAT_BASE=/chat
+VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
+VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
+VITE_COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
+VITE_COGNITO_LOGOUT_URI=https://enttriage.unr.dev/
+```
+
+Backend env on the VM (`Backend/healthlakeproxy/.env`):
+
+```powershell
+PORT=4000
+NODE_ENV=production
+ALLOWED_ORIGINS=https://enttriage.unr.dev
+COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
+```
+
+Start commands on the VM:
+
+```powershell
+cd Backend\healthlakeproxy
+npm start
+```
+
+```powershell
+cd Backend
+.venv\Scripts\activate
+python ollama_service.py
+```
+
+```powershell
+cd Backend
+.venv\Scripts\activate
+python main.py
+```
+
+```powershell
+cd hl-ui
+$env:PORT="8080"
+npm run dev
+```
+
+Important: add `https://enttriage.unr.dev/staff/callback` and `https://enttriage.unr.dev/` to the Cognito app client's allowed callback/logout URLs or login will fail.

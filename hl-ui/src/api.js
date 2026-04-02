@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:4000';
+import { API_BASE } from "./config";
 
 export async function apiFetch(path, opts = {}) {
   const res = await fetch(`${API_BASE}${path}`, {

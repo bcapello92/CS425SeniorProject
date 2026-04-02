@@ -1,24 +1,12 @@
-﻿// hl-ui/src/auth.jsx
+// hl-ui/src/auth.jsx
+import {
+  API_BASE,
+  COGNITO_CLIENT_ID,
+  COGNITO_DOMAIN,
+  COGNITO_LOGOUT_URI,
+  COGNITO_REDIRECT_URI,
+} from "./config";
 
-export const COGNITO_DOMAIN =
-  import.meta.env.VITE_COGNITO_DOMAIN ||
-  "https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com";
-
-export const COGNITO_CLIENT_ID =
-  import.meta.env.VITE_COGNITO_CLIENT_ID || "21hhbicb04v7vus5dmlpged4bo";
-
-export const COGNITO_REDIRECT_URI =
-  import.meta.env.VITE_COGNITO_REDIRECT_URI ||
-  "http://localhost:5173/staff/callback";
-
-export const COGNITO_LOGOUT_URI =
-  import.meta.env.VITE_COGNITO_LOGOUT_URI || "http://localhost:5173/";
-
-
-export const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://localhost:4000";
-
-// ----- PKCE helpers -----
 function base64UrlEncodeBytes(bytes) {
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
@@ -75,7 +63,6 @@ export async function exchangeCodeForTokens(code) {
     throw new Error(data?.error || `HTTP ${resp.status}`);
   }
 
-  //changed to remove local storage.
   sessionStorage.removeItem("pkce_code_verifier");
   return data;
 }
@@ -89,9 +76,8 @@ export function buildLogoutUrl() {
   return `${COGNITO_DOMAIN}/logout?${params.toString()}`;
 }
 
-// Clear server cookies
 export async function logoutServer() {
- const resp = await fetch(`${API_BASE}/api/auth/logout`, {
+  const resp = await fetch(`${API_BASE}/api/auth/logout`, {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
