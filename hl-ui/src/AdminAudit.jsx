@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
+import { API_BASE } from "./config";
 
 const FILTERS = [
   { value: "all", label: "All Activity" },

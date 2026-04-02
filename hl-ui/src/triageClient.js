@@ -1,11 +1,5 @@
 // hl-ui/src/triageClient.js
-const BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
-  "http://localhost:4000";
-
-const CHAT_BASE =
-  import.meta.env.VITE_CHAT_BASE?.replace(/\/$/, "") ||
-  "http://localhost:8002";
+import { API_BASE as BASE, CHAT_BASE } from "./config";
 
 class TriageClient {
     // Shared fetch wrapper for the authenticated app API. It normalizes JSON/text responses into thrown errors.
