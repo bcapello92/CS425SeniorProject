@@ -1,6 +1,7 @@
 ﻿// hl-ui/src/useAuth.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { buildLoginUrl, buildLogoutUrl, logoutServer, API_BASE } from "./auth.jsx";
+import { buildLoginUrl, buildLogoutUrl, logoutServer } from "./auth.jsx";
+import { API_BASE } from "./config.js";
 
 const AuthContext = createContext(null);
 
