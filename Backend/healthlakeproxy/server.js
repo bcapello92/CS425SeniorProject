@@ -6,6 +6,7 @@ import { Sha256 } from "@aws-crypto/sha256-js";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { fromIni } from "@aws-sdk/credential-provider-ini";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 import cookieParser from "cookie-parser";
@@ -638,7 +639,9 @@ const providerOptions = {};
 if (process.env.AWS_PROFILE) {
   providerOptions.profile = process.env.AWS_PROFILE;
 }
-const credentials = fromNodeProviderChain(providerOptions);
+const credentials = process.env.AWS_PROFILE
+  ? fromIni({ profile: process.env.AWS_PROFILE })
+  : fromNodeProviderChain(providerOptions);
 
 async function logResolvedAwsCredentials() {
   const resolved = await credentials();
