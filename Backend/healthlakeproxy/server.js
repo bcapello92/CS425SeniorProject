@@ -319,6 +319,16 @@ async function requireAuth(req, res, next) {
     // fallback: cookie
     if (!token && req.cookies?.access_token) token = req.cookies.access_token;
 
+    console.log("[AUTH DEBUG]", {
+      path: req.path,
+      method: req.method,
+      hasAuthorizationHeader: Boolean(bearer),
+      hasAccessTokenCookie: Boolean(req.cookies?.access_token),
+      hasRefreshTokenCookie: Boolean(req.cookies?.refresh_token),
+      cookieKeys: Object.keys(req.cookies || {}),
+      origin: req.headers.origin || null,
+    });
+
     if (!token) return res.status(401).json({ error: "Missing token" });
 
     const decoded = await verifyToken(token);
@@ -629,6 +639,21 @@ if (process.env.AWS_PROFILE) {
   providerOptions.profile = process.env.AWS_PROFILE;
 }
 const credentials = fromNodeProviderChain(providerOptions);
+
+async function logResolvedAwsCredentials() {
+  const resolved = await credentials();
+  console.log("[AWS DEBUG] resolved credentials", {
+    accessKeyPrefix: resolved?.accessKeyId?.slice(0, 8) || null,
+    hasSessionToken: Boolean(resolved?.sessionToken),
+    expiration:
+      resolved?.expiration instanceof Date
+        ? resolved.expiration.toISOString()
+        : resolved?.expiration || null,
+    profile: process.env.AWS_PROFILE || null,
+    region: process.env.AWS_REGION || process.env.REGION || null,
+  });
+  return resolved;
+}
 let cognitoSdk = null;
 let cognitoAdminClient = null;
 
@@ -734,8 +759,21 @@ console.log("[INIT] HealthLake Proxy starting with:", {
   HAS_PROFILE: !!process.env.AWS_PROFILE
 });
 
+logResolvedAwsCredentials().catch((err) => {
+  console.error("[AWS DEBUG] failed to resolve credentials", err);
+});
+
 async function signedFetch({ method = "GET", path = "", query = "", body }) {
   const queryParams = query ? Object.fromEntries(new URLSearchParams(query)) : undefined;
+
+  const resolved = await logResolvedAwsCredentials();
+  console.log("[AWS DEBUG] signing request", {
+    method,
+    path,
+    query,
+    accessKeyPrefix: resolved?.accessKeyId?.slice(0, 8) || null,
+    hasSessionToken: Boolean(resolved?.sessionToken),
+  });
 
   const req = new HttpRequest({
     method,
