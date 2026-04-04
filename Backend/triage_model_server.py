@@ -13,7 +13,7 @@ MODEL_PATH = "llama32_ent_triage_cls_lora_merged"
 # Tune these for CPU speed
 MAX_TRANSCRIPT_CHARS = 2000
 MAX_NEW_TOKENS = 96
-TRIAGE_LABELS = ["red", "orange", "yellow"]
+TRIAGE_LABELS = ["red", "orange", "blue"]
 
 app = FastAPI()
 
@@ -98,7 +98,7 @@ def keyword_fallback(payload: IntakePayload):
             "Fallback: moderate-risk keywords detected (worsening symptoms, fever, moderate pain).",
         )
 
-    return ("yellow", "Fallback: no high-risk keywords detected; defaulting to routine.")
+    return ("blue", "Fallback: no high-risk keywords detected; defaulting to routine.")
 
 
 def extract_patient_only_transcript(transcript: str) -> str:
@@ -201,16 +201,17 @@ Do NOT invent medical history, diagnoses, or symptoms not explicitly stated.
 Triage colors:
 - red: life-threatening or very high risk
 - orange: urgent, needs prompt evaluation but not immediately life-threatening
-- yellow: non-urgent / routine
+- blue: non-urgent / routine
 
 Output rules (must follow exactly):
 - Respond with JSON only (no markdown, no extra text).
 - Output EXACTLY ONE JSON object.
 - Start your response with '{' and end with '}'.
 - Keys must be exactly: "color", "rationale"
-- "color" must be exactly one of: "red", "orange", "yellow"
+- "color" must be exactly one of: "red", "orange", "blue"
 - "rationale" must be ONE sentence, max 20 words.
-- The rationale must mention only symptoms or risk factors explicitly present in the provided case.
+- The rationale must mention only symptoms or risk factors explicitly present in the provided case. Use only medical descriptors and list it in the form of "primary symptom, then the severity, then the timing and how quicky it is progessing. Finally note any additional symptoms."
+- add a confidence score from 0 to 100 as well. 
 - Do not copy stock phrases or example wording.
 """.strip()
 
@@ -381,8 +382,8 @@ def triage(payload: IntakePayload):
         color, rationale = keyword_fallback(payload)
         print("USING FALLBACK:", {"color": color, "rationale": rationale})
 
-    if color not in ("red", "orange", "yellow"):
-        color = "yellow"
+    if color not in ("red", "orange", "blue"):
+        color = "blue"
 
     final_confidence = label_probs.get(color)
     return {
