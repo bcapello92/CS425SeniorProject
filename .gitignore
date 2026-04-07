@@ -37,3 +37,5 @@ yarn-error.log*
 /Backend/imageRetrieval/src
 /Backend/__pycache__
 /Backend/imageRetrieval/index
+/Backend/healthlakeproxy/node_modules/@smithy
+/Backend/healthlakeproxy/node_modules
