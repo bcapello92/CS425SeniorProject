@@ -1,6 +1,10 @@
 // hl-ui/src/triageClient.js
 import { API_BASE as BASE, CHAT_BASE } from "./config";
 
+const CHAT_ENDPOINT = CHAT_BASE.endsWith("/chat")
+    ? CHAT_BASE
+    : `${CHAT_BASE}/chat`;
+
 class TriageClient {
     // Shared fetch wrapper for the authenticated app API. It normalizes JSON/text responses into thrown errors.
     async _request(path, { method = "GET", body } = {}) {
@@ -96,7 +100,7 @@ class TriageClient {
 
 // Sends the live patient chat transcript to the separate chat service used during intake.
 export async function sendChat(messages) {
-  const res = await fetch(`${CHAT_BASE}/chat`, {
+  const res = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ messages }),
