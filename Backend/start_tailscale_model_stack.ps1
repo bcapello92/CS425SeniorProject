@@ -110,14 +110,47 @@ function Wait-ForHttp {
     throw "Timed out waiting for $Url"
 }
 
+function Resolve-ImageDataDir {
+    param(
+        [string]$Candidate
+    )
+
+    $options = @()
+    if ($Candidate) {
+        $options += $Candidate
+    }
+
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    $options += (Join-Path $PSScriptRoot "imageRetrieval\data")
+    $options += (Join-Path $repoRoot "data")
+    $options += $repoRoot
+
+    foreach ($option in $options) {
+        if (-not $option) {
+            continue
+        }
+
+        $resolved = $null
+        try {
+            $resolved = (Resolve-Path $option -ErrorAction Stop).Path
+        } catch {
+            continue
+        }
+
+        if ((Test-Path (Join-Path $resolved "imgs")) -or (Test-Path (Join-Path $resolved "images"))) {
+            return $resolved
+        }
+    }
+
+    throw "Could not find an image dataset directory with an 'imgs' or 'images' folder. Pass -ImageDataDir explicitly."
+}
+
 $script:TailscaleExe = Get-TailscaleExe
 $pythonExe = Get-VenvPython
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $imageDir = Join-Path $PSScriptRoot "imageRetrieval"
 
-if (-not $ImageDataDir) {
-    $ImageDataDir = Join-Path $imageDir "data"
-}
+ $ImageDataDir = Resolve-ImageDataDir -Candidate $ImageDataDir
 
 if (-not $ImageIndexDir) {
     $ImageIndexDir = Join-Path $imageDir "index"
