@@ -1,13 +1,16 @@
 import { CHAT_BASE } from "./config";
 
 const OLLAMA_CHAT_BASE = CHAT_BASE || "http://localhost:8002";
+const CHAT_ENDPOINT = OLLAMA_CHAT_BASE.endsWith("/chat")
+  ? OLLAMA_CHAT_BASE
+  : `${OLLAMA_CHAT_BASE}/chat`;
 
 export async function sendChat(messages, language = 'en') {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 60000); // 60s timeout (allows for Ollama cold start)
 
   try {
-    const res = await fetch(`${OLLAMA_CHAT_BASE}/chat`, {
+    const res = await fetch(CHAT_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages, language }), // Include language in request
