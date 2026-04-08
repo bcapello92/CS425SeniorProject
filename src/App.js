@@ -1,126 +1,186 @@
-import { useEffect, useState } from 'react';
+import "./App.css";
 
-const API_BASE = 'http://localhost:4000/api';
-
-export default function App() {
-  const [patients, setPatients] = useState([]);
-  const [loadingPatients, setLoadingPatients] = useState(false);
-  const [error, setError] = useState(null);
-
-  const [selected, setSelected] = useState(null);
-  const [observations, setObservations] = useState([]);
-  const [loadingObs, setLoadingObs] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      setLoadingPatients(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE}/patients?count=20`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        const entries = (data.entry || []).map(e => e.resource);
-        setPatients(entries);
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoadingPatients(false);
-      }
-    })();
-  }, []);
-
-  const selectPatient = async (p) => {
-    setSelected(p);
-    setObservations([]);
-    setLoadingObs(true);
-    try {
-      const res = await fetch(`${API_BASE}/observations?patientId=${encodeURIComponent(p.id)}&count=25`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      const entries = (data.entry || []).map(e => e.resource);
-      setObservations(entries);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoadingObs(false);
-    }
-  };
-
+function App() {
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, maxWidth: 980, margin: '0 auto' }}>
-      <h1>HealthLake Viewer</h1>
+    <div className="page">
+      <header className="topbar">
+        <a className="navLink navLinkLeft" href="/provider">
+          Provider Portal
+        </a>
+        <a className="navLink navLinkRight" href="/">
+          Patient Page
+        </a>
+      </header>
 
-      {error && <div style={{ color: 'crimson', marginBottom: 12 }}>Error: {error}</div>}
+      <section className="hero">
+        <div className="badge">University of Nevada, Reno CSE</div>
+        <h1 className="title">AI-Powered ENT Patient Support Chatbot</h1>
+        <p className="subtitle">
+          Department of Computer Science and Engineering, University of Nevada,
+          Reno
+        </p>
 
-      <section style={{ marginTop: 12 }}>
-        <h2>Patients</h2>
-        {loadingPatients ? <p>Loading patients…</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th}>Name</th>
-                <th style={th}>Birth Date</th>
-                <th style={th}>ID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.map(p => {
-                const name = (p.name?.[0]) || {};
-                const full = [name.given?.join(' '), name.family].filter(Boolean).join(' ') || '—';
-                return (
-                  <tr key={p.id} onClick={() => selectPatient(p)} style={{ cursor: 'pointer' }}>
-                    <td style={td}>{full}</td>
-                    <td style={td}>{p.birthDate || '—'}</td>
-                    <td style={td}><code>{p.id}</code></td>
-                  </tr>
-                )
-              })}
-              {!patients.length && <tr><td style={td} colSpan={3}>No patients found.</td></tr>}
-            </tbody>
-          </table>
-        )}
+        <div className="metaGrid" role="list">
+          <div className="metaCard" role="listitem">
+            <div className="metaLabel">Project Title</div>
+            <div className="metaValue">AI-Powered ENT Patient Support Chatbot</div>
+          </div>
+
+          <div className="metaCard" role="listitem">
+            <div className="metaLabel">Team</div>
+            <div className="metaValue">20</div>
+          </div>
+
+          <div className="metaCard" role="listitem">
+            <div className="metaLabel">Team Members</div>
+            <div className="metaValue">
+              Wiem Boubaker, Divisha Naharas, Brendan Capello
+            </div>
+          </div>
+
+          <div className="metaCard" role="listitem">
+            <div className="metaLabel">Instructor</div>
+            <div className="metaValue">David Feil-Seifer</div>
+          </div>
+
+          <div className="metaCard" role="listitem">
+            <div className="metaLabel">External Advisor</div>
+            <div className="metaValue">
+              James McDuffie and Dr. Benjamin Teitelbaum
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section style={{ marginTop: 32 }}>
-        <h2>Observations {selected ? `for ${selected.name?.[0]?.given?.[0] ?? ''} ${selected.name?.[0]?.family ?? ''}` : ''}</h2>
-        {selected && loadingObs && <p>Loading observations…</p>}
-        {!selected && <p>Select a patient row to load observations.</p>}
-        {!!observations.length && (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th}>Code</th>
-                <th style={th}>Value</th>
-                <th style={th}>Effective</th>
-                <th style={th}>ID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {observations.map(o => {
-                const coding = o.code?.coding?.[0];
-                const codeText = coding?.display || o.code?.text || coding?.code || '—';
-                let value = '—';
-                if ('valueQuantity' in o) {
-                  const q = o.valueQuantity;
-                  value = [q?.value, q?.unit].filter(Boolean).join(' ');
-                } else if ('valueString' in o) value = o.valueString;
-                else if ('valueCodeableConcept' in o) value = o.valueCodeableConcept?.text || '—';
-                return (
-                  <tr key={o.id}>
-                    <td style={td}>{codeText}</td>
-                    <td style={td}>{value}</td>
-                    <td style={td}>{o.effectiveDateTime || '—'}</td>
-                    <td style={td}><code>{o.id}</code></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <main className="content">
+        <section className="card">
+          <div className="sectionHeader">
+            <h2 className="sectionTitle">Project Description</h2>
+            <p className="sectionIntro">
+              A triage-first patient support platform for ENT symptom intake,
+              clinician review, and safer routing to care.
+            </p>
+          </div>
+
+          <p className="paragraph">
+            The purpose of this project is to create and deploy an ENT Patient
+            Support Chatbot System to help users assess the urgency of ear,
+            nose, and throat symptoms before seeking professional medical
+            assistance. The system&apos;s primary users are individuals with ENT
+            symptoms who are unsure about the seriousness of their condition. By
+            providing early information, the system can minimize unnecessary
+            emergency visits while promoting prompt care for critical
+            situations. A second category of users are healthcare
+            professionals, such as physicians and nurses, who benefit from a
+            linked dashboard that allows them to examine triage findings,
+            monitor notifications, and obtain summary patient data. From a
+            public interest standpoint, the system supports increased
+            healthcare accessibility, patient knowledge, and more efficient use
+            of medical resources.
+          </p>
+
+          <p className="paragraph">
+            Its primary capacity is an interactive chatbot that performs
+            natural language chats with patients to gather symptom information
+            such as onset, duration, and severity. The system uses the
+            unstructured chat data to perform automated clinical triage,
+            categorizing patient condition into one of three levels: routine,
+            moderate, and emergency. For healthcare providers, the system
+            provides a secure, real-time Provider Triage Dashboard that shows
+            AI-generated rationales for each categorization and allows doctors
+            to examine chat transcripts and overrule automatic triage results
+            as needed. The system is based on a contemporary web architecture
+            that runs on Amazon Web Services. The frontend is built using
+            React.js and Vite for a responsive, accessible user experience. It
+            talks with a Node.js and Express middleware proxy, which handles
+            request signing securely. The backend processing uses a
+            microservices architecture, with Python and FastAPI serving the
+            custom-trained triage model and Ollama running local Llama 3.2
+            instances to support conversational features. AWS HealthLake
+            manages data persistence with FHIR-compliant storage for patient
+            information, while Amazon Cognito handles authentication and access
+            management for providers.
+          </p>
+
+          <p className="paragraph">
+            Safety is the most important consideration in a medical triage
+            application. To reduce clinical risk, the natural language
+            processing component is bound by a strict system prompt that
+            prohibits the AI from producing diagnoses, treatment plans, or
+            medical advice. The product is developed as a clinical decision
+            support system rather than an autonomous agent, and all triage
+            classifications are suggestions to a human physician who maintains
+            final authority for patient care. Security is equally important
+            when dealing with protected health information. We use AWS Cognito
+            for identity and access management so critical provider dashboards
+            remain accessible only to authenticated workers. Reliability is
+            supported by AWS HealthLake as the backend data store, taking
+            advantage of the high availability and durability of AWS cloud
+            infrastructure. The fine-tuned model responsible for classification
+            cannot achieve perfect accuracy, which is why providers can review
+            and override triage results when needed.
+          </p>
+        </section>
+
+        <section className="card">
+          <div className="sectionHeader">
+            <h2 className="sectionTitle">Project Domain and References</h2>
+          </div>
+
+          <h3 className="refHeading">Problem Domain Book</h3>
+          <p className="reference">
+            Francis, H. W., Haughey, B. H., Lesperance, M. M., Lund, V. J.,
+            Robbins, K. T., Park, S. S., and Hillel, A. (eds.). (2025).{" "}
+            <em>Cummings Otolaryngology: Head and Neck Surgery</em> (8th ed.).
+            Philadelphia, PA: Elsevier.
+          </p>
+
+          <h3 className="refHeading">Reference Articles</h3>
+          <p className="reference">
+            Semigran, H. L., Linder, J. A., Gidengil, C., and Mehrotra, A.
+            (2015). Evaluation of symptom checkers for self diagnosis and
+            triage: audit study. <em>BMJ</em>, 351, h3480.{" "}
+            <a
+              href="https://doi.org/10.1136/bmj.h3480"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://doi.org/10.1136/bmj.h3480
+            </a>
+          </p>
+
+          <p className="reference">
+            Ceney, A., et al. (2021). Accuracy of online symptom checkers and
+            the potential impact on service utilisation. <em>PLOS ONE</em>,
+            16(7), e0254088.{" "}
+            <a
+              href="https://doi.org/10.1371/journal.pone.0254088"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://doi.org/10.1371/journal.pone.0254088
+            </a>
+          </p>
+
+          <h3 className="refHeading">Websites</h3>
+          <p className="reference">
+            HL7. (2025). FHIR Overview (R5). <em>HL7 FHIR Specification</em>.{" "}
+            <a
+              href="https://hl7.org/fhir/overview.html"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://hl7.org/fhir/overview.html
+            </a>
+          </p>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <span>ENT Triage Project Landing Page</span>
+      </footer>
     </div>
   );
 }
 
-const th = { textAlign: 'left', borderBottom: '1px solid #ddd', padding: '8px' };
-const td = { borderBottom: '1px solid #eee', padding: '8px' };
+export default App;
