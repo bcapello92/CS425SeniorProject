@@ -126,7 +126,32 @@ async function callModelTriage({ patientId, answers, transcript }) {
     }
 
     const rationale = data.rationale || "Model did not provide rationale.";
-    return { color, rationale };
+    const confidence =
+      typeof data.confidence === "number" && Number.isFinite(data.confidence)
+        ? data.confidence
+        : null;
+    const final_confidence =
+      typeof data.final_confidence === "number" && Number.isFinite(data.final_confidence)
+        ? data.final_confidence
+        : null;
+    const model_color =
+      typeof data.model_color === "string" && data.model_color.trim()
+        ? String(data.model_color).toLowerCase()
+        : null;
+    const used_fallback = data.used_fallback === true;
+    const label_probs =
+      data.label_probs && typeof data.label_probs === "object"
+        ? data.label_probs
+        : null;
+    return {
+      color,
+      rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
+    };
 
   } catch (err) {
     console.error(`[DEBUG] CallModelTriage FAILED: ${err.message}`);
@@ -417,6 +442,52 @@ function readTriageFlagsFromObservation(obs) {
   return normalizeTriageFlags(parseJsonOrNull(flagsExt?.valueString) || {});
 }
 
+function findObservationNote(obs, pattern) {
+  return (obs?.note || [])
+    .map((entry) => entry?.text || "")
+    .find((text) => pattern.test(text));
+}
+
+function readObservationExtensionJson(obs, url) {
+  const entry = (obs?.extension || []).find((ext) => ext.url === url);
+  return parseJsonOrNull(entry?.valueString);
+}
+
+function readTranscriptFromObservation(obs) {
+  const transcriptNote = findObservationNote(obs, /^transcript\s*:/i);
+  if (!transcriptNote) return null;
+  return transcriptNote.replace(/^transcript\s*:\s*/i, "").trim() || null;
+}
+
+function readModelAccuracyFromObservation(obs) {
+  const metrics =
+    readObservationExtensionJson(obs, "http://example.org/triage-model-metrics") ||
+    readObservationExtensionJson(obs, "http://example.org/model-metrics");
+
+  if (metrics && typeof metrics === "object") {
+    const accuracy =
+      metrics.finalConfidence ??
+      metrics.modelAccuracy ??
+      metrics.accuracy ??
+      metrics.confidence ??
+      null;
+    if (accuracy !== null && accuracy !== undefined && accuracy !== "") {
+      return accuracy;
+    }
+  }
+
+  const note = findObservationNote(obs, /^model\s*accuracy\s*:/i);
+  if (!note) return null;
+  return note.replace(/^model\s*accuracy\s*:\s*/i, "").trim() || null;
+}
+
+function readOverrideFromObservation(obs) {
+  return (
+    readObservationExtensionJson(obs, "http://example.org/triage-override") ||
+    null
+  );
+}
+
 app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
     const user = getUserById(req.userId);
     res.json({
@@ -507,7 +578,16 @@ app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res
       return res.status(400).json({ error: "confirm must be DELETE" });
     }
 
-    const cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    let cognitoResult = null;
+    try {
+      cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    } catch (cognitoError) {
+      cognitoResult = {
+        deleted: false,
+        reason: cognitoError?.message || "cognito_delete_failed",
+      };
+    }
+
     disableSelfAccount({ user_id: req.userId });
 
     logAudit({
@@ -523,7 +603,12 @@ app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res
     res.clearCookie("access_token", { path: "/", sameSite: "lax", secure });
     res.clearCookie("refresh_token", { path: "/", sameSite: "lax", secure });
 
-    res.json({ ok: true, deleted: true, cognito: cognitoResult });
+    res.json({
+      ok: true,
+      deleted: true,
+      cognito: cognitoResult,
+      warning: cognitoResult?.deleted === false ? "Local account disabled, Cognito cleanup did not complete." : null,
+    });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -970,7 +1055,15 @@ app.post("/api/intake", async (req, res) => {
     }
 
     // 1) Ask classifier model
-    const { color, rationale } = await callModelTriage({
+    const {
+      color,
+      rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
+    } = await callModelTriage({
       patientId,
       answers,
       transcript,
@@ -1020,6 +1113,18 @@ app.post("/api/intake", async (req, res) => {
           url: "http://example.org/triage-answers",
           valueString: JSON.stringify(answers),
         },
+        {
+          url: "http://example.org/triage-model-metrics",
+          valueString: JSON.stringify({
+            modelAccuracy: final_confidence,
+            confidence,
+            finalConfidence: final_confidence,
+            modelColor: model_color,
+            finalColor: color,
+            usedFallback: used_fallback,
+            label_probs: label_probs || null,
+          }),
+        },
       ],
     };
 
@@ -1040,6 +1145,11 @@ app.post("/api/intake", async (req, res) => {
       id: created?.id || null,
       color,
       rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
       answers,
     });
   } catch (e) {
@@ -1050,7 +1160,12 @@ app.post("/api/intake", async (req, res) => {
 // ---------------------------------------------------------
 // TRIAGE DETAIL (PROTECTED)
 // ---------------------------------------------------------
-app.get("/api/triage-detail", requireAuth, async (req, res) => {
+app.get(
+  "/api/triage-detail",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
   try {
     const riskId = String(req.query.riskId || "").trim();
     if (!riskId) {
@@ -1080,10 +1195,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     }
 
     // --- rationale ---
-    const rationaleNote =
-      (obs.note || [])
-        .map((n) => n?.text || "")
-        .find((t) => /^rationale\s*:/i.test(t)) || "";
+    const rationaleNote = findObservationNote(obs, /^rationale\s*:/i) || "";
     const rationale = rationaleNote.replace(/^rationale\s*:\s*/i, "") || "";
 
     // --- answers ---
@@ -1101,6 +1213,9 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
 
     // --- flags ---
     const flags = readTriageFlagsFromObservation(obs);
+    const transcript = readTranscriptFromObservation(obs);
+    const modelAccuracy = readModelAccuracyFromObservation(obs);
+    const override = readOverrideFromObservation(obs);
 
     // --- patient info (non-fatal) ---
     let patient = null;
@@ -1134,9 +1249,12 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
         null,
       color: color || null,
       rationale: rationale || null,
+      transcript,
+      modelAccuracy,
       answers,
       patient,
       flags,
+      override,
     });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
@@ -1592,16 +1710,16 @@ app.post(
       const { membership_id } = req.body || {};
       if (!membership_id) return res.status(400).json({ error: "membership_id required" });
 
-        disableMember({ membership_id: Number(membership_id) });
+        const disabled = disableMember({ membership_id: Number(membership_id) });
         logAudit({
             actor_membership_id: req.membership.id,
             actor_user_id: req.userId,
             action: "member.disable",
             resource_type: "membership",
             resource_id: String(membership_id),
-            details: {},
+            details: { membership_id: Number(membership_id), status: disabled?.status || "disabled" },
         });
-      res.json({ ok: true });
+      res.json({ ok: true, membership: disabled });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }

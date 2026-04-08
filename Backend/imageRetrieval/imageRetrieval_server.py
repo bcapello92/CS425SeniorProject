@@ -13,8 +13,33 @@ app = FastAPI()
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
 WORKSPACE_PARENT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+DEFAULT_DATA_DIR = os.path.join(THIS_DIR, "data")
 
-DATA_DIR = os.getenv("IMAGE_DATA_DIR", WORKSPACE_PARENT)
+
+def resolve_data_dir():
+    env_dir = os.getenv("IMAGE_DATA_DIR")
+    if env_dir:
+        return os.path.abspath(env_dir)
+
+    candidates = [
+        DEFAULT_DATA_DIR,
+        os.path.join(REPO_ROOT, "Backend", "imageRetrieval", "data"),
+        WORKSPACE_PARENT,
+    ]
+    for candidate in candidates:
+        imgs_dir = os.path.join(candidate, "imgs")
+        images_dir = os.path.join(candidate, "images")
+        has_metadata = any(
+            os.path.isfile(os.path.join(candidate, name))
+            for name in ("data.json", "t2i.json", "cls.json")
+        )
+        if has_metadata and (os.path.isdir(imgs_dir) or os.path.isdir(images_dir)):
+            return candidate
+
+    return DEFAULT_DATA_DIR
+
+
+DATA_DIR = resolve_data_dir()
 INDEX_DIR = os.getenv("IMAGE_INDEX_DIR", os.path.join(THIS_DIR, "index"))
 EMBED_MODEL = os.getenv("IMAGE_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 BASE_URL = os.getenv("IMAGE_BASE_URL", "http://127.0.0.1:8001")
