@@ -546,6 +546,31 @@ function CaseFileModal({
                 </CaseSection>
             </div>
 
+            <CaseSection title="Patient History">
+                {detail?.patientHistory?.hasHistory ? (
+                    <div style={{ display: "grid", gap: 8 }}>
+                        <InfoRow label="Last visit" value={detail?.patientHistory?.lastVisit || "Unavailable"} />
+                        <InfoRow
+                            label="Conditions"
+                            value={(detail?.patientHistory?.conditions || []).join(", ") || "None recorded"}
+                        />
+                        <InfoRow
+                            label="Medications"
+                            value={(detail?.patientHistory?.medications || []).join(", ") || "None recorded"}
+                        />
+                        <InfoRow
+                            label="Allergies"
+                            value={(detail?.patientHistory?.allergies || []).join(", ") || "None recorded"}
+                        />
+                        <InfoRow label="Notes" value={detail?.patientHistory?.notes || "No additional notes"} />
+                    </div>
+                ) : (
+                    <div style={styles.mutedText}>
+                        No prior patient history on file for this patient.
+                    </div>
+                )}
+            </CaseSection>
+
             <CaseSection title="Triage Reasoning">
                 <div style={styles.readableText}>{detail?.rationale || "No rationale provided for this case."}</div>
             </CaseSection>

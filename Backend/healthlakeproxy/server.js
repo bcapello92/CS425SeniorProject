@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
+import fs from "node:fs";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
@@ -32,6 +33,10 @@ import {
 } from "./rbac_db.js";
 
 const app = express();
+const mockPatientHistoryPath = new URL("./mock_patient_history.json", import.meta.url);
+const mockPatientHistory = JSON.parse(
+  fs.readFileSync(mockPatientHistoryPath, "utf8")
+);
 const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
@@ -172,6 +177,31 @@ function extractServiceError(data, fallback) {
   }
   return fallback;
 }
+
+function getMockPatientHistory(patientId) {
+  const normalized = String(patientId || "").trim();
+  if (!normalized) return null;
+
+  return mockPatientHistory[normalized] || {
+    patientId: normalized,
+    hasHistory: false,
+    lastVisit: null,
+    conditions: [],
+    medications: [],
+    allergies: [],
+    notes: "",
+  };
+}
+
+app.get("/api/patient-history/:patientId", (req, res) => {
+  const patientId = String(req.params.patientId || "").trim();
+  if (!patientId) {
+    return res.status(400).json({ error: "patientId is required" });
+  }
+
+  const history = getMockPatientHistory(patientId);
+  return res.json(history);
+});
 
 app.post("/api/patient-chat", async (req, res) => {
   try {
@@ -1219,9 +1249,11 @@ app.get(
 
     // --- patient info (non-fatal) ---
     let patient = null;
+    let patientHistory = null;
     const patientRef = obs?.subject?.reference; // e.g. "Patient/patien0"
     if (patientRef && /^Patient\//.test(patientRef)) {
       const pid = patientRef.replace(/^Patient\//, "");
+      patientHistory = getMockPatientHistory(pid);
       try {
         const p = await signedFetch({
           path: `/Patient/${encodeURIComponent(pid)}`,
@@ -1253,6 +1285,7 @@ app.get(
       modelAccuracy,
       answers,
       patient,
+      patientHistory,
       flags,
       override,
     });

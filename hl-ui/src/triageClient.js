@@ -40,6 +40,12 @@ class TriageClient {
         });
     }
 
+    async getPatientHistory(patientId) {
+        return this._request(
+            `/api/patient-history/${encodeURIComponent(String(patientId || "").trim())}`
+        );
+    }
+
     // Loads the provider board summary grouped by triage level over a recent time window.
     async getBoard({ sinceHours }) {
         return this._request(

@@ -65,6 +65,8 @@ export default function PatientChatIntake() {
   const [entryId, setEntryId] = useState("");
   const [patientId, setPatientId] = useState(null);
   const [consented, setConsented] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySummary, setHistorySummary] = useState(null);
 
   // Helper for timestamps
   const getTimestamp = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -105,6 +107,8 @@ export default function PatientChatIntake() {
     setEntryId("");
     setPatientId(null);
     setConsented(false);
+    setHistoryLoading(false);
+    setHistorySummary(null);
     const ts = getTimestamp();
     setMessages([
       { sender: "bot", text: `${t.greeting}`, timestamp: ts },
@@ -114,6 +118,38 @@ export default function PatientChatIntake() {
     setSubmitting(false);
     setResult(null);
     setError(null);
+  }
+
+  async function beginIntake() {
+    const nextPatientId = entryId.trim();
+    if (!nextPatientId || !consented) return;
+
+    setHistoryLoading(true);
+    setError(null);
+
+    try {
+      const history = await triageClient.getPatientHistory(nextPatientId);
+      setHistorySummary(history);
+    } catch (err) {
+      setHistorySummary({
+        patientId: nextPatientId,
+        hasHistory: false,
+        conditions: [],
+        medications: [],
+        allergies: [],
+        notes: "",
+        lookupError: err?.message || "Unable to load patient history."
+      });
+    } finally {
+      setHistoryLoading(false);
+    }
+
+    setPatientId(nextPatientId);
+    const ts = getTimestamp();
+    setMessages([
+      { sender: "bot", text: t.greeting, timestamp: ts },
+      { sender: "bot", text: t.entLocation, timestamp: ts, suggestions: getSmartSuggestions(t.entLocation, language) },
+    ]);
   }
 
   // ---------- Timeline handlers ----------
@@ -310,17 +346,10 @@ export default function PatientChatIntake() {
           </label>
           <button
             disabled={!entryId.trim() || !consented}
-            onClick={() => {
-              setPatientId(entryId.trim());
-              const ts = getTimestamp();
-              setMessages([
-                { sender: "bot", text: t.greeting, timestamp: ts },
-                { sender: "bot", text: t.entLocation, timestamp: ts, suggestions: getSmartSuggestions(t.entLocation, language) },
-              ]);
-            }}
+            onClick={beginIntake}
             style={buttonPrimary}
           >
-            {t.beginChat}
+            {historyLoading ? "Checking history..." : t.beginChat}
           </button>
         </div>
       )}
@@ -328,6 +357,38 @@ export default function PatientChatIntake() {
       {/* Chat window */}
       {hasStartedChat && (
         <>
+          {historySummary && (
+            <div style={historyCard}>
+              <div style={historyTitle}>Patient History Check</div>
+              {historySummary.lookupError ? (
+                <div style={historyMuted}>{historySummary.lookupError}</div>
+              ) : historySummary.hasHistory ? (
+                <>
+                  <div style={historyMuted}>
+                    Prior history found for patient {historySummary.patientId}
+                    {historySummary.lastVisit ? `, last visit ${historySummary.lastVisit}` : ""}.
+                  </div>
+                  {!!historySummary.conditions?.length && (
+                    <div><strong>Conditions:</strong> {historySummary.conditions.join(", ")}</div>
+                  )}
+                  {!!historySummary.medications?.length && (
+                    <div><strong>Medications:</strong> {historySummary.medications.join(", ")}</div>
+                  )}
+                  {!!historySummary.allergies?.length && (
+                    <div><strong>Allergies:</strong> {historySummary.allergies.join(", ")}</div>
+                  )}
+                  {historySummary.notes ? (
+                    <div><strong>Notes:</strong> {historySummary.notes}</div>
+                  ) : null}
+                </>
+              ) : (
+                <div style={historyMuted}>
+                  No prior patient history on file for {historySummary.patientId}. Using stand-in history lookup.
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="chat-window" ref={chatWindowRef}>
             {messages.map((msg, index) => (
               <ChatMessage
@@ -456,4 +517,23 @@ const buttonSecondary = {
   border: "1px solid #ddd",
   background: "#fff",
   cursor: "pointer"
+};
+
+const historyCard = {
+  margin: "12px 16px 0",
+  padding: 12,
+  border: "1px solid #dbe3ef",
+  borderRadius: 12,
+  background: "#f8fbff",
+  boxShadow: "0 1px 6px rgba(15, 23, 42, 0.05)"
+};
+
+const historyTitle = {
+  fontWeight: 700,
+  marginBottom: 6
+};
+
+const historyMuted = {
+  color: "#475569",
+  marginBottom: 6
 };
