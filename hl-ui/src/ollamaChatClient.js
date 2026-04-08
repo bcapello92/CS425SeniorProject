@@ -1,6 +1,6 @@
-const OLLAMA_CHAT_BASE =
-  import.meta.env.VITE_OLLAMA_CHAT_BASE?.replace(/\/$/, "") ||
-  "http://localhost:8002";
+import { CHAT_BASE } from "./config";
+
+const OLLAMA_CHAT_BASE = CHAT_BASE || "http://localhost:8002";
 
 export async function sendChat(messages, language = 'en') {
   const controller = new AbortController();

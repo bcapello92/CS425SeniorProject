@@ -17,11 +17,15 @@ app = FastAPI()
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
+MODEL_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
+MODEL_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_PATH,
-    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-    device_map="auto" if torch.cuda.is_available() else None,
+    dtype=MODEL_DTYPE,
 )
+if MODEL_DEVICE == "cuda":
+    model = model.to("cuda")
 model.eval()
 
 class StopOnJsonEnd(StoppingCriteria):
