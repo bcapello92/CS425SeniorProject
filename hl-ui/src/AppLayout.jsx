@@ -1,10 +1,12 @@
-// hl-ui/src/AppLayout.jsx
-import { useNavigate } from "react-router-dom";
+﻿// hl-ui/src/AppLayout.jsx
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./useAuth.jsx";
 
 export default function AppLayout({ children }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const { loading, isAuthenticated, login, logout } = useAuth();
+  const isLandingPage = location.pathname === "/";
 
   function goProvider() {
     if (isAuthenticated) {
@@ -15,25 +17,28 @@ export default function AppLayout({ children }) {
   }
 
   function doLogout() {
-    logout(); // logout already redirects to Cognito logout
+    logout();
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f8fb" }}>
-      <header style={header}>
+    <div style={isLandingPage ? landingShell : appShell}>
+      <header style={isLandingPage ? landingHeader : header}>
         <div style={left}>
-          <button style={linkBtn} onClick={() => navigate("/")}>
-            Patient Chat
-          </button>
-
-          <button style={linkBtn} onClick={goProvider}>
+          <button
+            style={isLandingPage ? landingLinkBtn : linkBtn}
+            onClick={goProvider}
+          >
             Provider
           </button>
         </div>
 
         <div style={right}>
-          {loading ? (
-            <span style={status}>Checking login�</span>
+          {isLandingPage ? (
+            <button style={landingLinkBtn} onClick={() => navigate("/patient")}>
+              Patient Page
+            </button>
+          ) : loading ? (
+            <span style={status}>Checking login…</span>
           ) : isAuthenticated ? (
             <>
               <span style={status}>Provider signed in</span>
@@ -42,19 +47,31 @@ export default function AppLayout({ children }) {
               </button>
             </>
           ) : (
-            <button style={primaryBtn} onClick={() => login("/provider")}>
-              Provider Login
-            </button>
+            <>
+              <button style={linkBtn} onClick={() => navigate("/patient")}>
+                Patient Chat
+              </button>
+              <button style={primaryBtn} onClick={() => login("/provider")}>
+                Provider Login
+              </button>
+            </>
           )}
         </div>
       </header>
 
-      <main style={{ padding: 16 }}>{children}</main>
+      <main style={isLandingPage ? landingMain : appMain}>{children}</main>
     </div>
   );
 }
 
-/* ---- styles ---- */
+const appShell = { minHeight: "100vh", background: "#f6f8fb" };
+
+const landingShell = {
+  minHeight: "100vh",
+  background:
+    "radial-gradient(1200px 600px at 20% 0%, rgba(99, 102, 241, 0.25), transparent 60%), radial-gradient(900px 500px at 80% 10%, rgba(16, 185, 129, 0.18), transparent 60%), #0b1020",
+};
+
 const header = {
   display: "flex",
   justifyContent: "space-between",
@@ -64,8 +81,20 @@ const header = {
   borderBottom: "1px solid #e7edf5",
 };
 
+const landingHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  maxWidth: 980,
+  margin: "0 auto",
+  padding: "24px 18px 0",
+};
+
 const left = { display: "flex", gap: 10 };
 const right = { display: "flex", gap: 10, alignItems: "center" };
+
+const appMain = { padding: 16 };
+const landingMain = { padding: 0 };
 
 const linkBtn = {
   padding: "6px 10px",
@@ -75,6 +104,18 @@ const linkBtn = {
   cursor: "pointer",
   fontWeight: 600,
   fontSize: 13,
+};
+
+const landingLinkBtn = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(255, 255, 255, 0.12)",
+  background: "rgba(255, 255, 255, 0.06)",
+  color: "rgba(255, 255, 255, 0.92)",
+  cursor: "pointer",
+  fontWeight: 700,
+  fontSize: 13,
+  letterSpacing: "0.04em",
 };
 
 const primaryBtn = {
