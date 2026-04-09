@@ -178,6 +178,11 @@ function extractServiceError(data, fallback) {
   return fallback;
 }
 
+function buildProviderImageProxyUrl(req, imageName) {
+  if (!imageName) return "";
+  return `${req.protocol}://${req.get("host")}/api/provider/image-file?name=${encodeURIComponent(imageName)}`;
+}
+
 function getMockPatientHistory(patientId) {
   const normalized = String(patientId || "").trim();
   if (!normalized) return null;
@@ -1332,7 +1337,18 @@ app.post(
           : { error: await upstream.text() };
 
         if (upstream.ok) {
-          return res.json(data);
+          const images = Array.isArray(data?.images)
+            ? data.images.map((img) => ({
+                ...img,
+                sourceImageUrl: img?.imageUrl || "",
+                imageUrl: buildProviderImageProxyUrl(req, img?.imageName),
+              }))
+            : [];
+
+          return res.json({
+            ...data,
+            images,
+          });
         }
 
         lastStatus = upstream.status || 502;
@@ -1354,6 +1370,50 @@ app.post(
     } catch (e) {
       return res.status(502).json({
         error: e?.message || "Image retrieval service is unavailable",
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/provider/image-file",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const imageName = String(req.query.name || "").trim();
+      if (!imageName) {
+        return res.status(400).json({ error: "name is required" });
+      }
+
+      if (imageName.includes("/") || imageName.includes("\\")) {
+        return res.status(400).json({ error: "invalid image name" });
+      }
+
+      const base = String(IMAGE_RETRIEVAL_URL || "").replace(/\/$/, "");
+      const upstreamUrl = `${base}/images/${encodeURIComponent(imageName)}`;
+      const upstream = await fetch(upstreamUrl);
+
+      if (!upstream.ok) {
+        const text = await upstream.text();
+        return res.status(upstream.status || 502).json({
+          error: text || `Image file request failed (${upstream.status || 502})`,
+        });
+      }
+
+      const contentType = upstream.headers.get("content-type") || "application/octet-stream";
+      const cacheControl = upstream.headers.get("cache-control");
+      const arrayBuffer = await upstream.arrayBuffer();
+
+      res.setHeader("content-type", contentType);
+      if (cacheControl) {
+        res.setHeader("cache-control", cacheControl);
+      }
+      return res.send(Buffer.from(arrayBuffer));
+    } catch (e) {
+      return res.status(502).json({
+        error: e?.message || "Image file service is unavailable",
       });
     }
   }
