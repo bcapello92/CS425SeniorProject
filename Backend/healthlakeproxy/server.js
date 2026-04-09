@@ -180,7 +180,7 @@ function extractServiceError(data, fallback) {
 
 function buildProviderImageProxyUrl(req, imageName) {
   if (!imageName) return "";
-  return `${req.protocol}://${req.get("host")}/api/provider/image-file?name=${encodeURIComponent(imageName)}`;
+  return `/api/provider/image-file?name=${encodeURIComponent(imageName)}`;
 }
 
 function getMockPatientHistory(patientId) {
