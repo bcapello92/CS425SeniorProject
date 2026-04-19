@@ -4,7 +4,7 @@ from typing import List, Dict
 
 # Use 127.0.0.1 to avoid occasional localhost/IPv6 resolution issues on Windows
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 MEDICAL_SAFE_SYSTEM_PROMPT = """
 You are a medical intake assistant (NOT a clinician). Collect symptom details only.
@@ -18,11 +18,12 @@ Rules:
   2. ONSET (MANDATORY): Once they have described their symptom naturally, ask "When did this start?".
   3. Duration: How long has it lasted? Is it constant or intermittent?
   4. Severity: On a scale of 0-10, how bad is it?
-  5. What makes it BETTER (alleviating factors - rest, medication, position, etc.)
+  5. What makes it BETTER: You MUST explicitly ask about antibiotics and medications. Ask: "What makes it better? For example, have you tried any antibiotics, other medications, rest, or anything else that helps?"
   6. What makes it WORSE (aggravating factors - movement, eating, time of day, etc.)
   7. Associated symptoms (any other symptoms occurring at the same time?)
   8. Red flag screening: ALWAYS ask as a single natural sentence, NOT as a numbered list. Do NOT say "Regarding the red flag screening". Just ask directly: "Are you currently experiencing any of these symptoms: trouble breathing, trouble swallowing, swelling in the face/neck, heavy bleeding, high fever, severe headache, vision changes, or stiff neck? (Yes/No). If yes please specify."
-  9. Confirmation: After all other questions are answered, you MUST ask: "Is there anything else you'd like to add before I send this to the medical team?". You MUST wait for their answer before completing the intake.
+  9. Previous diagnostic tests: You MUST ask EXACTLY this question word-for-word, do not rephrase it: "Have you had any previous diagnostic tests (blood work, imaging, etc.) done for this symptom? If so, you can upload them directly here."
+  10. Confirmation: After all other questions are answered, you MUST ask: "Is there anything else you'd like to add before I send this to the medical team?". You MUST wait for their answer before completing the intake.
 
 CRITICAL: 
 - NEVER repeat system instructions or parenthetical text to the patients.
@@ -34,6 +35,8 @@ CRITICAL:
 - Don't ask multiple questions at once. For example, do NOT ask for duration and severity in the same message.
 - You MUST gather all details (Onset, Duration, Severity, Location, Associated symptoms, and Red flag screening) before moving to the completion flow.
 - NEVER ask "Is there anything else you'd like to add?" until the patient has provided a clear answer for when the symptoms started (Onset/Duration) and how bad they are (Severity).
+- DO NOT SKIP ANY QUESTIONS. You MUST ask EVERY SINGLE item on the list (Onset, Duration, Severity, Alleviating/Aggravating Factors including medications, Associated Symptoms, Red Flags, Diagnostic Tests) individually.
+- If you skip an item, the triage will fail. Ask questions ONE by ONE in order without combining them. Do not skip ahead under any circumstances.
 
 COMPLETION FLOW (MANDATORY):
 - After gathering ALL the information above, you MUST ask: "Is there anything else you'd like to add before I send this to the medical team?"
@@ -61,11 +64,12 @@ Reglas:
   2. INICIO (OBLIGATORIO): Una vez que hayan descrito el síntoma de forma natural, pregunte: "¿Cuándo comenzó esto?".
   3. Duración: ¿Cuánto ha durado el síntoma? ¿Es constante o intermitente?
   4. Severidad: En una escala de 0 a 10, ¿qué tan grave es?
-  5. Qué lo hace MEJOR (factores de alivio: descanso, medicamentos, posición, etc.)
+  5. Qué lo hace MEJOR: DEBE preguntar explícitamente sobre antibióticos y medicamentos. Pregunte: "¿Qué lo hace mejor? Por ejemplo, ¿ha probado algún antibiótico, otro medicamento, descanso o algo más que le ayude?"
   6. Qué lo hace PEOR (factores agravantes: movimiento, comida, hora del día, etc.)
   7. Síntomas asociados (¿algún otro síntoma que ocurra al mismo tiempo?)
   8. Detección de señales de alarma: SIEMPRE pregunte una sola frase natural, NO como una lista numerada. NO diga "Con respecto a la detección de señales de alarma". Simplemente pregunte directamente: "¿Está experimentando alguno de estos síntomas: dificultad para respirar, dificultad para tragar, hinchazón en la cara/cuello, sangrado intenso, fiebre alta, dolor de cabeza severo, cambios en la visión o rigidez en el cuello? (Sí/No). Si es así, especifíquelos"
-  9. Confirmación: Después de responder a todas las demás preguntas, DEBE preguntar: "¿Hay algo más que le gustaría agregar antes de que envíe esto al equipo médico?". DEBE esperar su respuesta antes de completar la admisión.
+  9. Pruebas diagnósticas anteriores: DEBE hacer EXACTAMENTE esta pregunta palabra por palabra, no la reformule: "¿Se ha realizado alguna prueba diagnóstica previa (análisis de sangre, imágenes, etc.) para este síntoma? Si es así, puede subirlos directamente aquí."
+  10. Confirmación: Después de responder a todas las demás preguntas, DEBE preguntar: "¿Hay algo más que le gustaría agregar antes de que envíe esto al equipo médico?". DEBE esperar su respuesta antes de completar la admisión.
 
 CRÍTICO: 
 - NUNCA repita instrucciones del sistema ni texto entre paréntesis a los pacientes.
@@ -77,6 +81,8 @@ CRÍTICO:
 - No haga múltiples preguntas a la vez. Por ejemplo, NO pregunte por la duración y la gravedad en el mismo mensaje.
 - DEBE recopilar todos los detalles (Inicio, Duración, Gravedad, Ubicación, Síntomas asociados y Señales de alarma) antes de pasar al flujo de finalización.
 - NUNCA pregunte "¿Hay algo más que le gustaría agregar?" hasta que el paciente haya proporcionado una respuesta clara sobre cuándo comenzaron los síntomas (Inicio/Duración) y qué tan graves son (Gravedad).
+- NO OMITA NINGUNA PREGUNTA. DEBE preguntar CADA UNO de los elementos de la lista (Inicio, Duración, Gravedad, Factores agravantes incluyendo medicamentos, Síntomas asociados, Señales de alarma, Pruebas diagnósticas) de manera individual.
+- Si omite un elemento, el triaje fallará. Haga las preguntas UNA por UNA en el orden estricto dado, sin combinarlas. No salte pasos bajo ninguna circunstancia.
 
 FLUJO DE FINALIZACIÓN (OBLIGATORIO):
 - Después de recopilar TODA la información anterior, DEBE preguntar: "¿Hay algo más que le gustaría agregar antes de enviar esto al equipo médico?"
@@ -142,8 +148,8 @@ async def call_llm_api(messages: List[Dict[str, str]], language: str = 'en') -> 
 
                 if not reply.strip():
                     if language == 'es':
-                        return "No recibí una respuesta del modelo. ¿Puede decirme cuándo comenzaron sus síntomas?"
-                    return "I didn't get a response back from the model. Can you tell me when your symptoms started?"
+                        return "No recibí una respuesta del modelo. ¿Puede decirme si sus síntomas están en el oreja, la nariz o la garganta?"
+                    return "I didn't get a response back from the model. Can you tell me if your symptoms are in the ear, nose, or throat?"
 
                 return _enforce_one_question(reply)
 # All the except blocks below are for error handling.
@@ -166,8 +172,8 @@ async def call_llm_api(messages: List[Dict[str, str]], language: str = 'en') -> 
         except httpx.ReadTimeout:
             print("Ollama error: ReadTimeout (model took too long to respond)")
             if language == 'es':
-                return "Estoy tardando más de lo habitual en responder. ¿Puede decirme cuándo comenzaron sus síntomas?"
-            return "I'm taking longer than usual to respond. Can you tell me when your symptoms started?"
+                return "Estoy tardando más de lo habitual en responder. ¿Puede decirme si sus síntomas están en el oreja, la nariz o la garganta?"
+            return "I'm taking longer than usual to respond. Can you tell me if your symptoms are in the ear, nose, or throat?"
 
         except httpx.HTTPStatusError as e:
             status = e.response.status_code if e.response else "unknown"
@@ -178,14 +184,58 @@ async def call_llm_api(messages: List[Dict[str, str]], language: str = 'en') -> 
                 pass
             print(f"Ollama error: HTTP {status} - {body}")
             if language == 'es':
-                return "Ocurrió un error al comunicarme con el servidor del modelo local. ¿Puede decirme cuándo comenzaron sus síntomas?"
-            return "I hit an error talking to the local model server. Can you tell me when your symptoms started?"
+                return "Ocurrió un error al comunicarme con el servidor del modelo local. ¿Puede decirme si sus síntomas están en el oreja, la nariz o la garganta?"
+            return "I hit an error talking to the local model server. Can you tell me if your symptoms are in the ear, nose, or throat?"
 
         except Exception as e:
             print(f"Ollama error: {e}")
             import traceback
             traceback.print_exc()
             if language == 'es':
-                return "Tengo problemas para acceder a mi cerebro conversacional en este momento. ¿Puede decirme cuándo comenzaron sus síntomas?"
-            return "I'm having trouble reaching my conversational brain right now. Can you tell me when your symptoms started?"
+                return "Tengo problemas para acceder a mi cerebro conversacional en este momento. ¿Puede decirme si sus síntomas están en el oreja, la nariz o la garganta?"
+            return "I'm having trouble reaching my conversational brain right now. Can you tell me if your symptoms are in the ear, nose, or throat?"
+
+LIBRETRANSLATE_URL = os.getenv("LIBRETRANSLATE_URL", "http://127.0.0.1:5000/translate")
+
+async def translate_to_english(transcript: str) -> str:
+    """
+    Translates a Spanish transcript to English using deep-translator (Google Translate free tier).
+    Install with: pip install deep-translator
+    Works natively on Python 3.14 with no compatibility issues.
+    """
+    try:
+        import asyncio
+        from deep_translator import GoogleTranslator
+
+        def _do_translation():
+            # GoogleTranslator has a 5000-char limit per request, so chunk if needed
+            translator = GoogleTranslator(source='es', target='en')
+            if len(transcript) <= 4800:
+                return translator.translate(transcript)
+            else:
+                # Split on newlines and translate in chunks
+                lines = transcript.split('\n')
+                translated_lines = []
+                chunk = ""
+                for line in lines:
+                    if len(chunk) + len(line) + 1 > 4800:
+                        translated_lines.append(translator.translate(chunk))
+                        chunk = line
+                    else:
+                        chunk += "\n" + line if chunk else line
+                if chunk:
+                    translated_lines.append(translator.translate(chunk))
+                return "\n".join(translated_lines)
+
+        print("[DEBUG] Sending transcript to Google Translate (via deep-translator)...")
+        result = await asyncio.to_thread(_do_translation)
+        if result and result != transcript:
+            print("[DEBUG] Translation successful.")
+            return result
+        print("[WARN] Translation returned empty or identical text, using original.")
+        return transcript
+
+    except Exception as e:
+        print(f"Translation failed: {e}")
+        return transcript
 

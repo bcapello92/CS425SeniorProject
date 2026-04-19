@@ -11,6 +11,7 @@ import ProviderAccount from "./ProviderAccount.jsx"
 import AdminHome from "./AdminHome.jsx";
 import AccountManagement from "./AccountManagment.jsx";
 import AdminAudit from "./AdminAudit.jsx";
+import ProviderUpload from "./ProviderUpload.jsx";
 import { useAuth } from "./useAuth.jsx";
 import { useEffect } from "react";
 
@@ -70,44 +71,52 @@ export default function App() {
           }
         />
         <Route
-           path="/provider/account"
-           element={
-               <Protected>
-                <ProviderAccount/>
-               </Protected>
-           }
-              />
-              <Route
-                  path="/provider/account"
-                  element={
-                      <Protected>
-                          <ProviderAccount />
-                      </Protected>
-                  }
-              />
-              <Route
-                  path="/provider/admin"
-                  element={
-                      <Protected>
-                          <AdminHome />
-                      </Protected>
-                  }
-              />
-              <Route
-                  path="/provider/admin/accounts"
-                  element={
-                      <Protected><AccountManagement />
-                      </Protected>
-                  }
+          path="/provider/account"
+          element={
+            <Protected>
+              <ProviderAccount />
+            </Protected>
+          }
+        />
+        <Route
+          path="/provider/account"
+          element={
+            <Protected>
+              <ProviderAccount />
+            </Protected>
+          }
+        />
+        <Route
+          path="/provider/admin"
+          element={
+            <Protected>
+              <AdminHome />
+            </Protected>
+          }
+        />
+        <Route
+          path="/provider/admin/accounts"
+          element={
+            <Protected><AccountManagement />
+            </Protected>
+          }
 
-              />
-              <Route
-                  path="/provider/admin/audit"
-                  element={
-                      <Protected><AdminAudit />
-                      </Protected>
-                  }
-              />
+        />
+        <Route
+          path="/provider/admin/audit"
+          element={
+            <Protected><AdminAudit />
+            </Protected>
+          }
+        />
+        <Route
+          path="/provider/upload"
+          element={
+            <Protected>
+              <ProviderUpload />
+            </Protected>
+          }
+        />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

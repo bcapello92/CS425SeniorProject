@@ -28,3 +28,56 @@ export async function sendChat(messages, language = 'en') {
     clearTimeout(t);
   }
 }
+
+export async function translateTranscript(transcript) {
+  try {
+    const res = await fetch(`${OLLAMA_CHAT_BASE}/translate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ transcript }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+
+    const data = await res.json();
+    return data.translated;
+  } catch (err) {
+    console.error("Translation API call failed:", err);
+    throw err;
+  }
+}
+
+export async function uploadPatientPdf(file, patientId) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("patient_id", patientId);
+
+  const res = await fetch(`${OLLAMA_CHAT_BASE}/upload-pdf`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`PDF upload failed: HTTP ${res.status}: ${errorText}`);
+  }
+
+  return await res.json();
+}
+
+export async function listPatientPdfs(patientId) {
+  const res = await fetch(`${OLLAMA_CHAT_BASE}/list-pdfs/${patientId}`);
+  if (!res.ok) {
+    throw new Error('Failed to list PDFs');
+  }
+  const data = await res.json();
+  return data.pdfs;
+}
+
+export function getPdfUrl(filename) {
+  return `${OLLAMA_CHAT_BASE}/pdfs/${filename}`;
+}
+

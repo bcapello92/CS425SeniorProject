@@ -1,10 +1,12 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ChatMessage from "./ChatMessage.jsx";
 import ChatInput from "./ChatInput.jsx";
 import SymptomTimeline from "./SymptomTimeline.jsx";
 import SuggestionChips from "./SuggestionChips.jsx";
 import { triageClient } from "./triageClient";
 import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, buildAnswers, getSmartSuggestions } from "./ChatbotLogic";
+import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, getSmartSuggestions } from "./ChatbotLogic";
+import { translateTranscript, uploadPatientPdf } from "./ollamaChatClient";
 import "./Chatbot.css";
 
 
@@ -32,11 +34,12 @@ const translations = {
     triageClassified: "Based on your conversation, your case is classified as",
     triageReasoning: "Reasoning:",
     triageNoRationale: "No rationale provided.",
-    triageError: "Sorry, I couldn't submit for triage. Please try again."
+    triageError: "Sorry, I couldn't submit for triage. Please try again.",
+    triageSubmitted: "✅ Thank you! Your information has been received by our medical team. Please remember to bring any previous medical test results or treatment documents to your appointment."
   },
   es: {
     greeting: "Si esto es una emergencia médica, llame al 911 inmediatamente⚠️. ¡Hola! Soy su asistente de ORL. Dígame qué está pasando y haré algunas preguntas para ayudar a nuestro equipo médico a entender su situación.",
-    entLocation: "Antes de comenzar, ¿podría decirme: esto ocurre principalmente en el oído, la nariz/senos paranasales, la garganta/cuello o en otra parte?",
+    entLocation: "Antes de comenzar, ¿podría decirme: esto ocurre principalmente en el oreja, la nariz/seno paranasales, la garganta/cuello o en otra parte?",
     enterCode: "Ingrese su código de ingreso o ID de paciente:",
     codePlaceholder: "ej. 12345 o ABCD-123",
     consentText: "Doy mi consentimiento para compartir mis respuestas para atención médica.",
@@ -52,7 +55,8 @@ const translations = {
     triageClassified: "Según su conversación, su caso está clasificado como",
     triageReasoning: "Razonamiento:",
     triageNoRationale: "No se proporcionó razonamiento.",
-    triageError: "Lo siento, no pude enviar para triaje. Por favor intente de nuevo."
+    triageError: "Lo siento, no pude enviar para triaje. Por favor intente de nuevo.",
+    triageSubmitted: "✅ ¡Gracias! Su información ha sido recibida por nuestro equipo médico. Recuerde traer los resultados de cualquier prueba médica previa o documentos de tratamiento a su cita."
   }
 };
 
@@ -88,6 +92,11 @@ export default function PatientChatIntake() {
   const [editingValue, setEditingValue] = useState(undefined);
   const inputRef = useRef(null);
 
+  // ---------- PDF upload state ----------
+  const [showPdfUpload, setShowPdfUpload] = useState(false);
+  const [awaitingFinalConfirmation, setAwaitingFinalConfirmation] = useState(false);
+  const pdfInputRef = useRef(null);
+
   const hasStartedChat = patientId !== null;
 
   useEffect(() => {
@@ -100,6 +109,32 @@ export default function PatientChatIntake() {
       win.scrollTop = win.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  // Show PDF upload button ONLY when the bot asks the specific "previous tests" question (step 9)
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.sender !== 'bot') return;
+    const lower = lastMsg.text.toLowerCase();
+    // Match only the exact step-9 question phrases (English and Spanish)
+    const triggered =
+      lower.includes('upload them directly') ||
+      lower.includes('puede subirlos') ||
+      lower.includes('diagnostic tests') ||
+      lower.includes('blood work') ||
+      lower.includes('imaging') ||
+      lower.includes('pruebas diagnósticas') ||
+      lower.includes('pruebas diagnosticas') ||
+      lower.includes('prueba diagnóstica') ||
+      lower.includes('prueba diagnostica') ||
+      lower.includes('análisis de sangre') ||
+      lower.includes('analisis de sangre') ||
+      lower.includes('imágenes') ||
+      lower.includes('imagenes');
+    if (triggered) setShowPdfUpload(true);
+    else setShowPdfUpload(false); // hide for all other bot messages
+  }, [messages]);
+
 
   function resetAll() {
     setEntryId("");
@@ -142,6 +177,40 @@ export default function PatientChatIntake() {
     // Reset editing value if we were editing
     setEditingValue(undefined);
 
+    // If we're waiting for the final confirmation after a PDF upload,
+    // handle it directly without calling the LLM (which gets confused by frontend-injected messages)
+    if (awaitingFinalConfirmation) {
+      const lower = userInput.trim().toLowerCase();
+      const isNegative = ['no', 'nope', "that's all", 'nothing', "i'm good", 'done',
+        'no, that\'s all', 'eso es todo', 'nada', 'estoy bien', 'listo'].some(w => lower.includes(w));
+
+      // Add the user's message to the chat
+      const newUserMsg = { sender: 'user', text: userInput.trim(), timestamp: getTimestamp() };
+
+      if (isNegative) {
+        setAwaitingFinalConfirmation(false);
+        const finalMessages = [...messages, newUserMsg];
+        setMessages(finalMessages);
+        sendForTriage(finalMessages);
+      } else {
+        // Patient has more to add — let LLM gather it, then it will ask confirmation again
+        setAwaitingFinalConfirmation(false);
+        sharedHandleUserMessage({
+          userInput,
+          patientId,
+          isTyping,
+          messages,
+          setMessages,
+          setIsTyping,
+          completeConversation: sendForTriage,
+          setShowTimeline,
+          getTimestamp,
+          language
+        });
+      }
+      return;
+    }
+
     sharedHandleUserMessage({
       userInput,
       patientId,
@@ -173,7 +242,7 @@ export default function PatientChatIntake() {
   };
 
   // ---------- Send chat transcript for triage ----------
-  
+
   async function sendForTriage() {
     if (!patientId) return;
     if (submitting) return;
@@ -184,25 +253,48 @@ export default function PatientChatIntake() {
     const transcript = buildTranscript(messages);
 
     const answers = buildAnswers(messages);
+    // Triage submission Debugging
+    console.log(`[TRIAGE] Triage submitted — Patient: ${patientId} — Language: ${language === 'es' ? 'Spanish' : 'English'}`);
 
     // add a visible status message
     const sendingMessage = language === 'es'
-      ? "✅ Enviando esta conversación para triaje..."
-      : "✅ Sending this conversation for triage...";
+      ? "✅ La información de triaje se envía al equipo médico. Por favor, recuerde traer cualquier documento médico relevante a su cita."
+      : "✅ Triage info are sent to the medical team. Please remember to bring any relevant medical documents to your appointment.";
     setMessages((prev) => [
       ...prev,
       { sender: "bot", text: sendingMessage },
     ]);
 
     try {
+      let originalTranscript = transcript;
+      let finalTranscript = originalTranscript;
+
+      // Translate to English if the intake was in Spanish
+      if (language === 'es') {
+        try {
+          console.log("[DEBUG] Translating Spanish transcript to English...");
+          finalTranscript = await translateTranscript(originalTranscript);
+          console.log("[DEBUG] Translation successful.");
+
+        } catch (err) {
+          console.warn("[WARN] Translation failed, submitting raw Spanish transcript", err);
+        }
+      }
+
       const data = await triageClient.submitIntake({
         patientId,
         answers,
-        transcript: buildTranscript(messages),
+        transcript: finalTranscript,
         symptomOnset
       });
 
       setResult(data);
+
+      // Show a friendly confirmation message to the patient
+      setMessages((prev) => [
+        ...prev,
+        { sender: "bot", text: t.triageSubmitted },
+      ]);
 
       // Don't show triage classification to patients
       /*
@@ -210,7 +302,7 @@ export default function PatientChatIntake() {
       let triageLabel = t.triageRoutine;
       let severityClass = "non-urgent";
       let emoji = "✅";
-
+     
       if (triageColor === "red") {
         triageLabel = t.triageSevere;
         severityClass = "emergency";
@@ -220,7 +312,7 @@ export default function PatientChatIntake() {
         severityClass = "semi-urgent";
         emoji = "⚠️";
       }
-
+     
       const botReply = `
         <div class="severity-container">
           <button class="severity-btn ${severityClass}">
@@ -230,7 +322,7 @@ export default function PatientChatIntake() {
           <p><strong>${t.triageReasoning}</strong> ${data.rationale || t.triageNoRationale}</p>
         </div>
       `;
-
+     
       setMessages((prev) => [...prev, { sender: "bot", text: botReply, isHTML: true }]);
       */
     } catch (err) {
@@ -254,7 +346,7 @@ export default function PatientChatIntake() {
     <div className="chatbot-wrapper" style={{ position: "fixed", top: "50px", left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <header className="chatbot-header">
         <img src="/logo.png" alt="ENT Logo" className="logo" />
-        <h1>ENT Patient Support Chatbot</h1>
+        <h1>RapidENT Chatbot</h1>
       </header>
 
       {/* Start screen */}
@@ -374,6 +466,63 @@ export default function PatientChatIntake() {
           {/* Only show input when triage not complete */}
           {!result && (
             <div style={{ display: "flex", flexDirection: "column", marginTop: 10, paddingBottom: 32 }}>
+              {/* PDF Upload Button — appears after bot asks about past tests */}
+              {showPdfUpload && (
+                <div style={{ padding: '8px 16px' }}>
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length === 0) return;
+
+                      setShowPdfUpload(false);
+                      setMessages(prev => [...prev, {
+                        sender: 'user',
+                        text: `📎 Submitting ${files.length} document${files.length > 1 ? 's' : ''}...`,
+                        timestamp: getTimestamp()
+                      }]);
+
+                      const succeeded = [];
+                      const failed = [];
+
+                      for (const file of files) {
+                        try {
+                          await uploadPatientPdf(file, patientId);
+                          succeeded.push(file.name);
+                        } catch (err) {
+                          failed.push(file.name);
+                        }
+                      }
+
+                      const fileList = succeeded.map(n => `📎 ${n}`).join('\n');
+                      const confirmMsg = succeeded.length > 0
+                        ? (language === 'es'
+                          ? `¿Hay algo más que le gustaría agregar antes de que envíe esto al equipo médico?`
+                          : `Is there anything else you'd like to add before I send this to the medical team?`)
+                        : `❌ Could not upload documents. Please try again.`;
+
+                      setMessages(prev => [...prev.slice(0, -1),
+                      { sender: 'user', text: fileList, timestamp: getTimestamp() },
+                      { sender: 'bot', text: confirmMsg, timestamp: getTimestamp() }
+                      ]);
+
+                      if (succeeded.length > 0) setAwaitingFinalConfirmation(true);
+                      if (pdfInputRef.current) pdfInputRef.current.value = '';
+                    }}
+                  />
+                  <button
+                    onClick={() => pdfInputRef.current?.click()}
+                    style={{ padding: '8px 14px', borderRadius: 8, border: '1px dashed #4a90e2', background: '#e7f3ff', cursor: 'pointer', fontSize: '0.9em', width: '100%' }}
+                  >
+                    📎 {language === 'es' ? 'Adjuntar documentos médicos anteriores (PDF)' : 'Attach previous medical documents (PDF)'}
+                  </button>
+                </div>
+              )}
+
               {/* Suggestion Chips */}
               {messages.length > 0 && messages[messages.length - 1].sender === "bot" && !showTimeline && (
                 <SuggestionChips
@@ -381,6 +530,10 @@ export default function PatientChatIntake() {
                   onSelect={handleUserMessage}
                 />
               )}
+
+
+
+
 
               <div style={{ display: "flex", gap: 8 }}>
                 <div style={{ flex: 1 }}>

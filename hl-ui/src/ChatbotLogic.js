@@ -101,8 +101,10 @@ export const handleUserMessage = async ({
     } catch (err) {
         console.error("Chatbot logic error:", err);
         const errorText = language === 'es'
-            ? "Tengo un poco de problemas para conectarme a mi cerebro conversacional en este momento. ¿Podría repetir eso o decirme cuándo comenzaron estos síntomas?"
-            : "I'm having a bit of trouble connecting to my brain right now. Could you repeat that or tell me when these symptoms first started?";
+            ? "Tengo un poco de problemas para conectarme a mi cerebro conversacional en este momento. ¿Podría repetir eso o decirme si sus síntomas están en el oreja, la nariz o la garganta?"
+            : "I'm having a bit of trouble connecting to my brain right now. Could you repeat that or tell me if your symptoms are in the ear, nose, or throat?";
+
+        const errorSuggestions = getSmartSuggestions(errorText, language);
 
         // Graceful error handling in the chat UI
         setMessages((prev) => [
@@ -111,13 +113,9 @@ export const handleUserMessage = async ({
                 sender: "bot",
                 text: errorText,
                 timestamp: getTimestamp(),
+                suggestions: errorSuggestions,
             },
         ]);
-
-        // Auto-show timeline so gathering continues even if the model is offline
-        if (setShowTimeline) {
-            setShowTimeline(true);
-        }
     } finally {
         setIsTyping(false);
     }
@@ -146,10 +144,10 @@ export const getSmartSuggestions = (text, language = 'en') => {
     // 1b) ENT location question — opening question about where symptoms are
     if (
         (lower.includes("ear") && lower.includes("nose") && lower.includes("throat")) ||
-        (lower.includes("oído") || lower.includes("oido")) && (lower.includes("nariz") || lower.includes("garganta"))
+        (lower.includes("oreja") || lower.includes("oido")) && (lower.includes("nariz") || lower.includes("garganta"))
     ) {
         return isSpanish
-            ? ["Oído", "Nariz/Senos", "Garganta/Cuello", "Otro lugar"]
+            ? ["Oreja", "Nariz/seno", "Garganta/Cuello", "Otro lugar"]
             : ["Ear", "Nose/Sinuses", "Throat/Neck", "Elsewhere"];
     }
 
@@ -207,7 +205,7 @@ export const getSmartSuggestions = (text, language = 'en') => {
     if (lower.includes("symptoms") || lower.includes("else") ||
         lower.includes("síntomas") || lower.includes("sintomas") || lower.includes("más") || lower.includes("otro")) {
         return isSpanish
-            ? ["Dolor de garganta", "Dolor de oído", "Congestión", "Tos"]
+            ? ["Dolor de garganta", "Dolor de oreja", "Congestión", "Tos"]
             : ["Sore throat", "Ear pain", "Congestion", "Cough"];
     }
 

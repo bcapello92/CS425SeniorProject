@@ -61,8 +61,22 @@ const translations = {
 export default function SymptomTimeline({ onSelect, onCancel, language = 'en' }) {
     const t = translations[language];
     const [mode, setMode] = useState("today"); // today, yesterday, week, longer
-    const [selectedHour, setSelectedHour] = useState("12");
-    const [selectedPeriod, setSelectedPeriod] = useState("PM");
+
+    const localTodayYYYYMMDD = (() => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    })();
+
+    const nowInit = new Date();
+    const initHour24 = nowInit.getHours();
+    const initPeriod = initHour24 >= 12 ? "PM" : "AM";
+    const initHour = initHour24 === 0 ? 12 : (initHour24 > 12 ? initHour24 - 12 : initHour24);
+
+    const [selectedHour, setSelectedHour] = useState(String(initHour));
+    const [selectedPeriod, setSelectedPeriod] = useState(initPeriod);
     const [selectedTimeOfDay, setSelectedTimeOfDay] = useState(null);
     const [selectedDay, setSelectedDay] = useState(null);
     const [selectedDate, setSelectedDate] = useState("");
@@ -169,10 +183,23 @@ export default function SymptomTimeline({ onSelect, onCancel, language = 'en' })
 
     const canSubmit = () => {
         switch (mode) {
-            case "today": return selectedHour && selectedPeriod;
+            case "today": {
+                if (!selectedHour || !selectedPeriod) return false;
+                const h = parseInt(selectedHour);
+                const hour24 = selectedPeriod === "PM" && h !== 12
+                    ? h + 12
+                    : selectedPeriod === "AM" && h === 12
+                        ? 0
+                        : h;
+                return hour24 <= new Date().getHours();
+            }
             case "yesterday": return selectedTimeOfDay !== null;
             case "week": return selectedDay !== null;
-            case "longer": return selectedDate !== "";
+            case "longer": {
+                if (!selectedDate) return false;
+                // Safely compare the chosen YYYY-MM-DD strictly against the local current day
+                return selectedDate <= localTodayYYYYMMDD;
+            }
             default: return false;
         }
     };
@@ -220,14 +247,18 @@ export default function SymptomTimeline({ onSelect, onCancel, language = 'en' })
                             <select value={selectedHour} onChange={(e) => setSelectedHour(e.target.value)}>
                                 {[...Array(12)].map((_, i) => {
                                     const hour = i + 1;
-                                    return <option key={hour} value={hour}>{hour}</option>;
+                                    const hour24 = selectedPeriod === "PM" && hour !== 12
+                                        ? hour + 12
+                                        : (selectedPeriod === "AM" && hour === 12 ? 0 : hour);
+                                    const isFuture = hour24 > new Date().getHours();
+                                    return <option key={hour} value={hour} disabled={isFuture}>{hour}</option>;
                                 })}
                             </select>
                             <span>:</span>
                             <span>00</span>
                             <select value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)}>
                                 <option value="AM">AM</option>
-                                <option value="PM">PM</option>
+                                <option value="PM" disabled={new Date().getHours() < 12}>PM</option>
                             </select>
                         </div>
                     </div>
@@ -254,15 +285,22 @@ export default function SymptomTimeline({ onSelect, onCancel, language = 'en' })
                     <div className="week-picker">
                         <label>{t.selectDay}</label>
                         <div className="day-buttons">
-                            {weekDays.map(day => (
-                                <button
-                                    key={day.key}
-                                    className={selectedDay === day.key ? "active" : ""}
-                                    onClick={() => setSelectedDay(day.key)}
-                                >
-                                    {day.label.slice(0, 3)}
-                                </button>
-                            ))}
+                            {weekDays.map(day => {
+                                const targetDay = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].indexOf(day.key);
+                                const currentDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+                                const isFutureDay = targetDay > currentDay;
+
+                                return (
+                                    <button
+                                        key={day.key}
+                                        className={selectedDay === day.key ? "active" : ""}
+                                        onClick={() => setSelectedDay(day.key)}
+                                        disabled={isFutureDay}
+                                    >
+                                        {day.label.slice(0, 3)}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -274,7 +312,7 @@ export default function SymptomTimeline({ onSelect, onCancel, language = 'en' })
                             type="date"
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
-                            max={new Date().toISOString().split('T')[0]}
+                            max={localTodayYYYYMMDD}
                         />
                     </div>
                 )}
