@@ -8,7 +8,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from contextlib import nullcontext
 
-LABELS = ["red", "orange", "green"]
+LABELS = ["red", "orange", "blue"]
 
 
 def build_triage_prompt(symptoms: str, duration: str, comorbidities: str) -> str:
@@ -20,7 +20,7 @@ Patient Information:
 - Duration: {duration}
 - Medical History: {comorbidities}
 
-Classify as one of: red (emergency), orange (urgent), or green (routine)
+Classify as one of: red (emergency), orange (urgent), or blue (routine)
 
 Classification:"""
     
@@ -38,8 +38,8 @@ def extract_label_from_raw(raw: str) -> str:
         return 'red'
     elif first in ['orange', 'urgent', 'moderate']:
         return 'orange'
-    elif first in ['green', 'yellow', 'routine', 'minor']:
-        return 'green'
+    elif first in ['green', 'blue', 'routine', 'minor']:
+        return 'blue'
     
     return first
 

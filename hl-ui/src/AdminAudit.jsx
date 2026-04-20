@@ -293,7 +293,7 @@ function formatTriageColor(value) {
   const color = String(value || "").toLowerCase();
   if (color === "red") return "Severe";
   if (color === "orange") return "Semi-Routine";
-  if (color === "yellow") return "Routine";
+  if (color === "blue") return "Routine";
   return formatValue(value);
 }
 

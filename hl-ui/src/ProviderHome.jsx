@@ -83,7 +83,7 @@ export default function ProviderHome() {
                 <SummaryPill label="Open" value={triage?.openTotal ?? 0} />
                 <SummaryPill label="Red" value={triage?.counts?.red ?? 0} />
                 <SummaryPill label="Semi-Routine" value={triage?.counts?.orange ?? 0} />
-                <SummaryPill label="Routine" value={triage?.counts?.yellow ?? 0} />
+                <SummaryPill label="Routine" value={triage?.counts?.blue ?? 0} />
                 <SummaryPill label="Audit" value={homeData?.summary?.recentAuditCount ?? 0} />
               </>
             )}

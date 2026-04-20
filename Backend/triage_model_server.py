@@ -62,7 +62,7 @@ class IntakePayload(BaseModel):
 def keyword_fallback(payload: IntakePayload):
     """
     Backup classifier if the model output is empty/unparsable.
-    red > orange > yellow
+    red > orange > blue
     """
     text = []
     for a in payload.answers:

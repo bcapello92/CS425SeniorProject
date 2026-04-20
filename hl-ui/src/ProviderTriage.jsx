@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { triageClient } from "./triageClient";
 import { useAuth } from "./useAuth.jsx";
 
-const EMPTY_GROUPS = { red: [], orange: [], yellow: [] };
+const EMPTY_GROUPS = { red: [], orange: [], blue: [] };
 
 export default function ProviderTriage() {
     const { me } = useAuth();
@@ -20,7 +20,7 @@ export default function ProviderTriage() {
     const permissions = Array.isArray(me?.permissions) ? me.permissions : [];
     const canOverride = permissions.includes("triage.override");
     const groups = data?.groups || EMPTY_GROUPS;
-    const items = [...groups.red, ...groups.orange, ...groups.yellow];
+    const items = [...groups.red, ...groups.orange, ...groups.blue];
     const selectedItem = items.find((item) => item.riskId === selectedRiskId) || null;
     const selectedState = selectedRiskId ? detail[selectedRiskId] : null;
     const selectedDetail = selectedState?.data || null;
@@ -109,8 +109,8 @@ export default function ProviderTriage() {
     function removeFromBoard(riskId) {
         setData((prev) => {
             if (!prev) return prev;
-            const nextGroups = { red: [], orange: [], yellow: [] };
-            for (const color of ["red", "orange", "yellow"]) {
+            const nextGroups = { red: [], orange: [], blue: [] };
+            for (const color of ["red", "orange", "blue"]) {
                 nextGroups[color] = (prev.groups?.[color] || []).filter((item) => item.riskId !== riskId);
             }
             return {
@@ -119,7 +119,7 @@ export default function ProviderTriage() {
                 counts: {
                     red: nextGroups.red.length,
                     orange: nextGroups.orange.length,
-                    yellow: nextGroups.yellow.length,
+                    blue: nextGroups.blue.length,
                 },
             };
         });
@@ -268,8 +268,8 @@ export default function ProviderTriage() {
             });
             setData((prev) => {
                 if (!prev) return prev;
-                const nextGroups = { red: [], orange: [], yellow: [] };
-                for (const groupColor of ["red", "orange", "yellow"]) {
+                const nextGroups = { red: [], orange: [], blue: [] };
+                for (const groupColor of ["red", "orange", "blue"]) {
                     for (const entry of prev.groups?.[groupColor] || []) {
                         if (entry.riskId !== riskId) nextGroups[groupColor].push(entry);
                     }
@@ -281,7 +281,7 @@ export default function ProviderTriage() {
                     counts: {
                         red: nextGroups.red.length,
                         orange: nextGroups.orange.length,
-                        yellow: nextGroups.yellow.length,
+                        blue: nextGroups.blue.length,
                     },
                 };
             });
@@ -320,12 +320,12 @@ export default function ProviderTriage() {
                 {!err && !loading && data ? (
                     <div style={styles.summary}>
                         Since {new Date(data.since).toLocaleString()} | Severe {data.counts?.red || 0},
-                        Semi-Routine {data.counts?.orange || 0}, Routine {data.counts?.yellow || 0}
+                        Semi-Routine {data.counts?.orange || 0}, Routine {data.counts?.blue || 0}
                     </div>
                 ) : null}
 
                 <div style={styles.columns}>
-                    {["red", "orange", "yellow"].map((color) => (
+                    {["red", "orange", "blue"].map((color) => (
                         <div key={color} style={styles.column}>
                             <div style={{ ...styles.columnHeader, background: colorBg(color) }}>
                                 {labelForColor(color)} ({groups[color]?.length || 0})
@@ -527,7 +527,7 @@ function CaseFileModal({
     onSaveOverride,
 }) {
     const flags = detail?.flags || {};
-    const color = detail?.color || item?.color || "yellow";
+    const color = detail?.color || item?.color || "blue";
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
@@ -702,7 +702,7 @@ function CaseFileModal({
                             >
                                 <option value="red">Severe (Red)</option>
                                 <option value="orange">Semi-Routine (Orange)</option>
-                                <option value="yellow">Routine (Yellow)</option>
+                                <option value="blue">Routine (Blue)</option>
                             </select>
                             <span style={styles.mutedText}>
                                 {detail?.override?.at ? `Last override ${new Date(detail.override.at).toLocaleString()}` : "No manual override recorded"}

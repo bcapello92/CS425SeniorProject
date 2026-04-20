@@ -179,27 +179,29 @@ npm run dev
 - Triage API: `http://localhost:8000`
 - Ollama service: `http://localhost:8002`
 
-## VM Hosting
+## Web Hosting
 
 The VM reverse proxy is configured to expose whatever is listening on `0.0.0.0:8080` at:
 
 - `https://enttriage.unr.dev/`
 
-Recommended deployment pattern on the VM:
+The hosted website runs the frontend and HealthLake/Cognito proxy on the VM. The model workloads run separately on a Tailscale-connected machine:
 
-1. Keep backend services private on localhost:
-   - HealthLake proxy on `127.0.0.1:4000`
-   - Triage API on `127.0.0.1:8000`
-   - Ollama chat service on `127.0.0.1:8002`
-2. Run the Vite frontend on `0.0.0.0:8080`
-3. Let the Vite dev server proxy browser requests from `/api` to `127.0.0.1:4000`
+- `enttriage.unr.dev` VM:
+  - HealthLake proxy on `127.0.0.1:4000`
+  - Vite frontend on `0.0.0.0:8080`
+  - Vite proxies `/api` to `127.0.0.1:4000`
+- Tailscale model host:
+  - Triage API on Tailscale HTTPS port `8443`
+  - Chat service on Tailscale HTTPS port `8444`
+  - Image retrieval on Tailscale HTTPS port `8445`
 
 Frontend env on the VM (`hl-ui/.env.local`):
 
 ```powershell
 VITE_PUBLIC_ORIGIN=https://enttriage.unr.dev
 VITE_API_BASE=/api
-VITE_CHAT_BASE=/chat
+VITE_CHAT_BASE=https://your-gpu-host.your-tailnet.ts.net:8444
 VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
 VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
 VITE_COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
@@ -213,32 +215,27 @@ PORT=4000
 NODE_ENV=production
 ALLOWED_ORIGINS=https://enttriage.unr.dev
 COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
+MODEL_URL=https://your-gpu-host.your-tailnet.ts.net:8443
+CHAT_SERVICE_URL=https://your-gpu-host.your-tailnet.ts.net:8444
+IMAGE_RETRIEVAL_URL=https://your-gpu-host.your-tailnet.ts.net:8445
 ```
 
-Start commands on the VM:
+Start the proxy on the VM:
 
 ```powershell
 cd Backend\healthlakeproxy
 npm start
 ```
 
-```powershell
-cd Backend
-.venv\Scripts\activate
-python ollama_service.py
-```
-
-```powershell
-cd Backend
-.venv\Scripts\activate
-python main.py
-```
+Start the website on the VM:
 
 ```powershell
 cd hl-ui
 $env:PORT="8080"
 npm run dev
 ```
+
+Do not start the triage API, chat service, or image retrieval service on the website VM for the hosted deployment. Those services should be running on the Tailscale model host, and the VM proxy/frontend should point at the Tailscale URLs above.
 
 Important: add `https://enttriage.unr.dev/staff/callback` and `https://enttriage.unr.dev/` to the Cognito app client's allowed callback/logout URLs or login will fail.
 
@@ -253,10 +250,10 @@ Prerequisites on the GPU host:
 - `Backend\.venv` or repo-root `.venv` present
 - Ollama running locally on that machine
 
-Start the stack from the repo root:
+Start the stack from the repo root on the Tailscale model host:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Backend\start_tailscale_model_stack.ps1
+powershell -ExecutionPolicy Bypass -File .\start_tailscale_model_services.ps1
 ```
 
 That script:

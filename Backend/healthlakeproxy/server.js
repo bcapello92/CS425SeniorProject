@@ -126,8 +126,8 @@ async function callModelTriage({ patientId, answers, transcript }) {
     }
 
     let color = String(data.color || "").toLowerCase();
-    if (!["red", "orange", "yellow"].includes(color)) {
-      color = "yellow"; // fallback
+    if (!["red", "orange", "blue"].includes(color)) {
+      color = "blue"; // fallback
     }
 
     const rationale = data.rationale || "Model did not provide rationale.";
@@ -214,11 +214,11 @@ function readTriageColorFromObservation(obs) {
     "";
   color = String(color || "").toLowerCase();
 
-  if (!["red", "orange", "yellow", "green"].includes(color)) {
+  if (!["red", "orange", "blue", "green"].includes(color)) {
     const notesText = (obs?.note || [])
       .map((n) => n?.text || "")
       .join(" ");
-    const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow|green)/i.exec(notesText);
+    const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|blue|green)/i.exec(notesText);
     color = String(match?.[2] || "").toLowerCase();
   }
 
@@ -819,12 +819,12 @@ app.get("/api/provider/home", requireAuth, requireActiveMembership, async (req, 
         .map((e) => e.resource)
         .filter((r) => r?.resourceType === "Observation");
 
-      const counts = { red: 0, orange: 0, yellow: 0 };
+      const counts = { red: 0, orange: 0, blue: 0 };
       for (const o of entries) {
         const text = (o.note || []).map((n) => n?.text || "").join(" ");
-        const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
+        const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|blue)/i.exec(text);
         const color = String(m?.[2] || "").toLowerCase();
-        if (!["red", "orange", "yellow"].includes(color)) continue;
+        if (!["red", "orange", "blue"].includes(color)) continue;
 
         const flags = readTriageFlagsFromObservation(o);
         if (flags.contacted && flags.scheduled) continue;
@@ -835,7 +835,7 @@ app.get("/api/provider/home", requireAuth, requireActiveMembership, async (req, 
       triage = {
         since: sinceIso,
         counts,
-        openTotal: counts.red + counts.orange + counts.yellow,
+        openTotal: counts.red + counts.orange + counts.blue,
       };
     }
 
@@ -1157,14 +1157,14 @@ app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermiss
 
     console.log(`[BOARD] Found ${entries.length} observations since ${sinceIso}`);
 
-    const groups = { red: [], orange: [], yellow: [] };
+    const groups = { red: [], orange: [], blue: [] };
 
     for (const o of entries) {
       const text = (o.note || [])
         .map((n) => n?.text || "")
         .join(" ")
         .toLowerCase();
-      const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(text);
+      const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|blue)/i.exec(text);
       const color = m?.[2]?.toLowerCase();
 
       if (!color) {
@@ -1199,7 +1199,7 @@ app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermiss
       counts: {
         red: groups.red.length,
         orange: groups.orange.length,
-        yellow: groups.yellow.length,
+        blue: groups.blue.length,
       },
       groups,
     });
@@ -1351,11 +1351,11 @@ app.get(
       "";
     color = String(color || "").toLowerCase();
 
-    if (!["red", "orange", "yellow"].includes(color)) {
+    if (!["red", "orange", "blue"].includes(color)) {
       const notesText = (obs.note || [])
         .map((n) => n?.text || "")
         .join(" ");
-      const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(
+      const m = /(triage(?:\s*color)?\s*:\s*)(red|orange|blue)/i.exec(
         notesText
       );
       color = (m?.[2] || "").toLowerCase();
@@ -1594,10 +1594,10 @@ app.get(
           obs?.valueCodeableConcept?.coding?.[0]?.code ||
           "";
         color = String(color || "").toLowerCase();
-        if (!["red", "orange", "yellow"].includes(color)) {
+        if (!["red", "orange", "blue"].includes(color)) {
           const noteText = (obs.note || []).map((n) => n?.text || "").join(" ");
-          const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow)/i.exec(noteText);
-          color = String(match?.[2] || "yellow").toLowerCase();
+          const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|blue)/i.exec(noteText);
+          color = String(match?.[2] || "blue").toLowerCase();
         }
 
         const patientId = obs.subject?.reference?.replace(/^Patient\//, "") || "unknown";
@@ -1743,10 +1743,10 @@ app.patch(
       const color = String(body.color || "").toLowerCase();
       const reason = body.reason || null;
 
-      if (!["red", "orange", "yellow"].includes(color)) {
+      if (!["red", "orange", "blue"].includes(color)) {
         return res
           .status(400)
-          .json({ error: "color must be red|orange|yellow" });
+          .json({ error: "color must be red|orange|blue" });
       }
 
       // oad Observation
