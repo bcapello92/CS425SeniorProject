@@ -366,8 +366,22 @@ export default function PatientChatIntake() {
                 <>
                   <div style={historyMuted}>
                     Prior history found for patient {historySummary.patientId}
-                    {historySummary.lastVisit ? `, last visit ${historySummary.lastVisit}` : ""}.
+                    {historySummary.lastScheduledAt
+                      ? `, last scheduled ${new Date(historySummary.lastScheduledAt).toLocaleString()}`
+                      : historySummary.lastVisit
+                        ? `, last visit ${historySummary.lastVisit}`
+                        : ""}.
                   </div>
+                  {historySummary.lastTriageRationale ? (
+                    <div>
+                      <strong>Previous triage reasoning:</strong> {historySummary.lastTriageRationale}
+                    </div>
+                  ) : null}
+                  {historySummary.lastTriageColor ? (
+                    <div>
+                      <strong>Previous triage level:</strong> {historySummary.lastTriageColor}
+                    </div>
+                  ) : null}
                   {!!historySummary.conditions?.length && (
                     <div><strong>Conditions:</strong> {historySummary.conditions.join(", ")}</div>
                   )}

@@ -549,7 +549,29 @@ function CaseFileModal({
             <CaseSection title="Patient History">
                 {detail?.patientHistory?.hasHistory ? (
                     <div style={{ display: "grid", gap: 8 }}>
-                        <InfoRow label="Last visit" value={detail?.patientHistory?.lastVisit || "Unavailable"} />
+                        <InfoRow
+                            label="Last scheduled"
+                            value={
+                                detail?.patientHistory?.lastScheduledAt
+                                    ? new Date(detail.patientHistory.lastScheduledAt).toLocaleString()
+                                    : detail?.patientHistory?.lastVisit || "Unavailable"
+                            }
+                        />
+                        <InfoRow
+                            label="Last triage"
+                            value={[
+                                detail?.patientHistory?.lastTriageColor
+                                    ? labelForColor(detail.patientHistory.lastTriageColor)
+                                    : null,
+                                detail?.patientHistory?.lastTriageDate
+                                    ? new Date(detail.patientHistory.lastTriageDate).toLocaleString()
+                                    : null,
+                            ].filter(Boolean).join(" • ") || "Unavailable"}
+                        />
+                        <InfoRow
+                            label="Last reasoning"
+                            value={detail?.patientHistory?.lastTriageRationale || "No prior triage reasoning recorded"}
+                        />
                         <InfoRow
                             label="Conditions"
                             value={(detail?.patientHistory?.conditions || []).join(", ") || "None recorded"}
@@ -563,6 +585,27 @@ function CaseFileModal({
                             value={(detail?.patientHistory?.allergies || []).join(", ") || "None recorded"}
                         />
                         <InfoRow label="Notes" value={detail?.patientHistory?.notes || "No additional notes"} />
+                        {!!detail?.patientHistory?.triageHistory?.length && (
+                            <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                                <div style={styles.summaryLabel}>Recent HealthLake Triage History</div>
+                                {detail.patientHistory.triageHistory.map((entry) => (
+                                    <div key={entry.observationId || entry.date} style={styles.answerCard}>
+                                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                                            {entry.color ? labelForColor(entry.color) : "Triage"}{" "}
+                                            {entry.date ? `• ${new Date(entry.date).toLocaleString()}` : ""}
+                                        </div>
+                                        {entry.appointmentAt ? (
+                                            <div style={{ color: "#334155", marginBottom: 4 }}>
+                                                Scheduled: {new Date(entry.appointmentAt).toLocaleString()}
+                                            </div>
+                                        ) : null}
+                                        <div style={{ color: "#334155" }}>
+                                            {entry.rationale || "No rationale recorded."}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div style={styles.mutedText}>

@@ -198,14 +198,146 @@ function getMockPatientHistory(patientId) {
   };
 }
 
-app.get("/api/patient-history/:patientId", (req, res) => {
+function getObservationDate(obs) {
+  return (
+    obs?.effectiveDateTime ||
+    obs?.issued ||
+    obs?.meta?.lastUpdated ||
+    null
+  );
+}
+
+function readTriageColorFromObservation(obs) {
+  let color =
+    obs?.valueCodeableConcept?.text ||
+    obs?.valueCodeableConcept?.coding?.[0]?.code ||
+    "";
+  color = String(color || "").toLowerCase();
+
+  if (!["red", "orange", "yellow", "green"].includes(color)) {
+    const notesText = (obs?.note || [])
+      .map((n) => n?.text || "")
+      .join(" ");
+    const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow|green)/i.exec(notesText);
+    color = String(match?.[2] || "").toLowerCase();
+  }
+
+  return color || null;
+}
+
+function readTriageRationaleFromObservation(obs) {
+  const rationaleNote = findObservationNote(obs, /^rationale\s*:/i) || "";
+  return rationaleNote.replace(/^rationale\s*:\s*/i, "").trim() || null;
+}
+
+function isTriageObservation(obs) {
+  const codeText = String(obs?.code?.text || "").toLowerCase();
+  const coding = obs?.code?.coding || [];
+  return (
+    codeText.includes("triage") ||
+    coding.some((entry) =>
+      String(entry?.system || "").includes("triage") ||
+      String(entry?.code || "").toLowerCase().includes("triage")
+    ) ||
+    !!readTriageColorFromObservation(obs) ||
+    !!readTriageRationaleFromObservation(obs)
+  );
+}
+
+async function fetchPatientTriageObservations(patientId) {
+  const encodedPatientId = encodeURIComponent(patientId);
+  const queries = [
+    `subject=Patient/${encodedPatientId}&_count=50&_sort=-date`,
+    `patient=${encodedPatientId}&_count=50&_sort=-date`,
+    `_count=100&_sort=-_lastUpdated`,
+  ];
+
+  let lastError = null;
+  for (const query of queries) {
+    try {
+      const bundle = await signedFetch({ path: "/Observation", query });
+      const observations = (bundle?.entry || [])
+        .map((entry) => entry?.resource)
+        .filter((resource) => resource?.resourceType === "Observation")
+        .filter((obs) => {
+          const ref = String(obs?.subject?.reference || "");
+          return !ref || ref === `Patient/${patientId}`;
+        })
+        .filter(isTriageObservation);
+
+      if (observations.length || !query.startsWith("_count=")) {
+        return observations;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "[HL WARN] patient history observation lookup failed",
+      lastError.status || "",
+      lastError.message || ""
+    );
+  }
+  return [];
+}
+
+async function getPatientHistory(patientId, { excludeObservationId = null } = {}) {
+  const normalized = String(patientId || "").trim();
+  if (!normalized) return null;
+
+  const mock = getMockPatientHistory(normalized);
+  const observations = (await fetchPatientTriageObservations(normalized))
+    .filter((obs) => !excludeObservationId || obs?.id !== excludeObservationId)
+    .map((obs) => {
+      const flags = readTriageFlagsFromObservation(obs);
+      return {
+        observationId: obs?.id || null,
+        date: getObservationDate(obs),
+        color: readTriageColorFromObservation(obs),
+        rationale: readTriageRationaleFromObservation(obs),
+        scheduled: !!flags?.scheduled,
+        appointmentAt: flags?.appointmentAt || null,
+      };
+    })
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+  const scheduled = observations
+    .filter((item) => item.appointmentAt)
+    .sort(
+      (a, b) =>
+        new Date(b.appointmentAt || 0).getTime() -
+        new Date(a.appointmentAt || 0).getTime()
+    );
+  const lastTriage = observations.find((item) => item.rationale || item.color) || null;
+
+  return {
+    ...mock,
+    patientId: normalized,
+    source: observations.length ? "healthlake" : "mock",
+    hasHistory: Boolean(mock?.hasHistory || observations.length),
+    lastVisit: scheduled[0]?.appointmentAt || mock?.lastVisit || null,
+    lastScheduledAt: scheduled[0]?.appointmentAt || null,
+    lastTriageDate: lastTriage?.date || null,
+    lastTriageColor: lastTriage?.color || null,
+    lastTriageRationale: lastTriage?.rationale || null,
+    triageHistory: observations.slice(0, 5),
+  };
+}
+
+app.get("/api/patient-history/:patientId", async (req, res) => {
   const patientId = String(req.params.patientId || "").trim();
   if (!patientId) {
     return res.status(400).json({ error: "patientId is required" });
   }
 
-  const history = getMockPatientHistory(patientId);
-  return res.json(history);
+  try {
+    const history = await getPatientHistory(patientId);
+    return res.json(history);
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message });
+  }
 });
 
 app.post("/api/patient-chat", async (req, res) => {
@@ -1258,7 +1390,7 @@ app.get(
     const patientRef = obs?.subject?.reference; // e.g. "Patient/patien0"
     if (patientRef && /^Patient\//.test(patientRef)) {
       const pid = patientRef.replace(/^Patient\//, "");
-      patientHistory = getMockPatientHistory(pid);
+      patientHistory = await getPatientHistory(pid, { excludeObservationId: obs.id });
       try {
         const p = await signedFetch({
           path: `/Patient/${encodeURIComponent(pid)}`,
