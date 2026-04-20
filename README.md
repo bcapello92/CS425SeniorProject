@@ -178,3 +178,110 @@ npm run dev
 - HealthLake proxy: `http://localhost:4000`
 - Triage API: `http://localhost:8000`
 - Ollama service: `http://localhost:8002`
+
+## VM Hosting
+
+The VM reverse proxy is configured to expose whatever is listening on `0.0.0.0:8080` at:
+
+- `https://enttriage.unr.dev/`
+
+Recommended deployment pattern on the VM:
+
+1. Keep backend services private on localhost:
+   - HealthLake proxy on `127.0.0.1:4000`
+   - Triage API on `127.0.0.1:8000`
+   - Ollama chat service on `127.0.0.1:8002`
+2. Run the Vite frontend on `0.0.0.0:8080`
+3. Let the Vite dev server proxy browser requests from `/api` to `127.0.0.1:4000`
+
+Frontend env on the VM (`hl-ui/.env.local`):
+
+```powershell
+VITE_PUBLIC_ORIGIN=https://enttriage.unr.dev
+VITE_API_BASE=/api
+VITE_CHAT_BASE=/chat
+VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
+VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
+VITE_COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
+VITE_COGNITO_LOGOUT_URI=https://enttriage.unr.dev/
+```
+
+Backend env on the VM (`Backend/healthlakeproxy/.env`):
+
+```powershell
+PORT=4000
+NODE_ENV=production
+ALLOWED_ORIGINS=https://enttriage.unr.dev
+COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
+```
+
+Start commands on the VM:
+
+```powershell
+cd Backend\healthlakeproxy
+npm start
+```
+
+```powershell
+cd Backend
+.venv\Scripts\activate
+python ollama_service.py
+```
+
+```powershell
+cd Backend
+.venv\Scripts\activate
+python main.py
+```
+
+```powershell
+cd hl-ui
+$env:PORT="8080"
+npm run dev
+```
+
+Important: add `https://enttriage.unr.dev/staff/callback` and `https://enttriage.unr.dev/` to the Cognito app client's allowed callback/logout URLs or login will fail.
+
+## Tailscale Model Hosting
+
+If you want to run the model-serving workloads on a separate GPU machine and let the rest of the app reach them over Tailscale, keep the services bound to `127.0.0.1` on the GPU host and publish them with `tailscale serve`.
+
+Prerequisites on the GPU host:
+
+- Tailscale installed and connected to your tailnet
+- HTTPS enabled for Tailscale Serve
+- `Backend\.venv` or repo-root `.venv` present
+- Ollama running locally on that machine
+
+Start the stack from the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Backend\start_tailscale_model_stack.ps1
+```
+
+That script:
+
+- starts the triage API on `127.0.0.1:8000`
+- starts the chat service on `127.0.0.1:8002`
+- starts the image retrieval service on `127.0.0.1:8001`
+- publishes them privately to your tailnet with Tailscale Serve on HTTPS ports `8443`, `8444`, and `8445`
+
+The resulting URLs look like:
+
+```powershell
+https://your-gpu-host.your-tailnet.ts.net:8443/triage
+https://your-gpu-host.your-tailnet.ts.net:8444/chat
+https://your-gpu-host.your-tailnet.ts.net:8445/search-images
+```
+
+To consume those services from another machine, set:
+
+- `MODEL_URL=https://your-gpu-host.your-tailnet.ts.net:8443`
+- `CHAT_SERVICE_URL=https://your-gpu-host.your-tailnet.ts.net:8444`
+- `IMAGE_RETRIEVAL_URL=https://your-gpu-host.your-tailnet.ts.net:8445`
+
+If the frontend needs to call the chatbot service directly from the browser, also set:
+
+- `VITE_CHAT_BASE=https://your-gpu-host.your-tailnet.ts.net:8444`
+
+A copyable template is included at `Backend/tailscale_models.env.example`.

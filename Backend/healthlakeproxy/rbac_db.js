@@ -304,7 +304,13 @@ export function approveMember({ membership_id, roleNames, approved_by_sub }) {
 }
 
 export function disableMember({ membership_id }) {
+  const membership = db.prepare(`SELECT * FROM memberships WHERE id=?`).get(membership_id);
+  if (!membership) throw new Error("Membership not found");
+
   db.prepare(`UPDATE memberships SET status='disabled' WHERE id=?`).run(membership_id);
+  db.prepare(`DELETE FROM membership_roles WHERE membership_id=?`).run(membership_id);
+
+  return db.prepare(`SELECT * FROM memberships WHERE id=?`).get(membership_id);
 }
 
 // ---- role CRUD + permissions ----
@@ -421,7 +427,7 @@ export function listMyAudit({ actor_membership_id, limit = 50 }) {
 export function listAuditAll({ limit = 200 }) {
   return db
     .prepare(
-      `SELECT a.id, a.at, u.email, u.cognito_sub, a.actor_user_id, a.actor_membership_id, a.action, a.resource_type, a.resource_id, a.details_json
+      `SELECT a.id, a.at, u.email, u.display_name, u.cognito_sub, a.actor_user_id, a.actor_membership_id, a.action, a.resource_type, a.resource_id, a.details_json
        FROM audit_log a
        JOIN memberships m ON m.id = a.actor_membership_id
        JOIN users u ON u.id = a.actor_user_id

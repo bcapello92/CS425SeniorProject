@@ -37,7 +37,7 @@ start "Ollama Service" cmd /k "cd /d %VENV_SCRIPTS% && call activate && cd /d %S
 
 :: Start Image Retrieval Service
 echo Starting Image Retrieval Service on port 8001...
-start "Image Retrieval" cmd /k "cd /d %VENV_SCRIPTS% && call activate && cd /d %IMG_DIR% && set IMAGE_DATA_DIR=%IMAGE_DATA_ROOT% && set IMAGE_INDEX_DIR=%IMAGE_INDEX_ROOT% && uvicorn imageRetrieval_server:app --host 127.0.0.1 --port 8001"
+start "Image Retrieval" cmd /k "cd /d %VENV_SCRIPTS% && call activate && cd /d %IMG_DIR% && set ""IMAGE_DATA_DIR=%IMAGE_DATA_ROOT%"" && set ""IMAGE_INDEX_DIR=%IMAGE_INDEX_ROOT%"" && uvicorn imageRetrieval_server:app --host 127.0.0.1 --port 8001"
 
 :: Start HealthLake Proxy (uses .env file for AWS credentials)
 echo Starting HealthLake Proxy on port 4000...

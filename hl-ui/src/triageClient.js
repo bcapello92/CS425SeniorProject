@@ -1,11 +1,9 @@
 // hl-ui/src/triageClient.js
-const BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ||
-  "http://localhost:4000";
+import { API_BASE as BASE, CHAT_BASE } from "./config";
 
-const CHAT_BASE =
-  import.meta.env.VITE_CHAT_BASE?.replace(/\/$/, "") ||
-  "http://localhost:8002";
+const CHAT_ENDPOINT = CHAT_BASE.endsWith("/chat")
+    ? CHAT_BASE
+    : `${CHAT_BASE}/chat`;
 
 class TriageClient {
     // Shared fetch wrapper for the authenticated app API. It normalizes JSON/text responses into thrown errors.
@@ -40,6 +38,12 @@ class TriageClient {
             method: "POST",
             body: { patientId, answers, transcript },
         });
+    }
+
+    async getPatientHistory(patientId) {
+        return this._request(
+            `/api/patient-history/${encodeURIComponent(String(patientId || "").trim())}`
+        );
     }
 
     // Loads the provider board summary grouped by triage level over a recent time window.
@@ -102,7 +106,7 @@ class TriageClient {
 
 // Sends the live patient chat transcript to the separate chat service used during intake.
 export async function sendChat(messages) {
-  const res = await fetch(`${CHAT_BASE}/chat`, {
+  const res = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ messages }),

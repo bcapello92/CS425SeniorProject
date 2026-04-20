@@ -1,8 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE =
-  (import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000");
+import { API_BASE } from "./config";
 
 async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -20,6 +19,7 @@ async function api(path, { method = "GET", body } = {}) {
   if (!res.ok || data?.error) {
     throw new Error(data?.error || `HTTP ${res.status}`);
   }
+
   return data;
 }
 
@@ -40,6 +40,7 @@ export default function ProviderAccount() {
     setLoading(true);
     setError("");
     setMessage("");
+
     try {
       const data = await api("/api/account/profile");
       setProfile(data);
@@ -60,6 +61,7 @@ export default function ProviderAccount() {
     setSaving(true);
     setError("");
     setMessage("");
+
     try {
       const data = await api("/api/account/profile", {
         method: "PATCH",
@@ -83,6 +85,7 @@ export default function ProviderAccount() {
     setDeleting(true);
     setError("");
     setMessage("");
+
     try {
       await api("/api/account", {
         method: "DELETE",
@@ -97,7 +100,9 @@ export default function ProviderAccount() {
     }
   }
 
-  if (loading) return <div style={{ padding: 16 }}>Loading account settings…</div>;
+  if (loading) {
+    return <div style={{ padding: 16 }}>Loading account settings...</div>;
+  }
 
   return (
     <div style={{ padding: 16, maxWidth: 760, margin: "0 auto" }}>
@@ -108,9 +113,15 @@ export default function ProviderAccount() {
 
       <div style={card}>
         <div style={cardTitle}>Profile</div>
-        <div style={metaLine}><b>Email:</b> {profile?.email || "-"}</div>
-        <div style={metaLine}><b>Subject:</b> <span style={mono}>{profile?.sub || "-"}</span></div>
-        <div style={metaLine}><b>Status:</b> {profile?.status || "-"}</div>
+        <div style={metaLine}>
+          <b>Email:</b> {profile?.email || "-"}
+        </div>
+        <div style={metaLine}>
+          <b>Subject:</b> <span style={mono}>{profile?.sub || "-"}</span>
+        </div>
+        <div style={metaLine}>
+          <b>Status:</b> {profile?.status || "-"}
+        </div>
 
         <form onSubmit={saveProfile} style={{ marginTop: 12 }}>
           <label style={label}>Display Name</label>
@@ -131,8 +142,8 @@ export default function ProviderAccount() {
       <div style={{ ...card, borderColor: "#fecaca", marginTop: 14 }}>
         <div style={dangerTitle}>Delete Account</div>
         <div style={hintDanger}>
-          This disables your local app account and attempts to remove your Cognito user.
-          This action is intended to be irreversible.
+          This disables your local app account and attempts to remove your
+          Cognito user. This action is intended to be irreversible.
         </div>
 
         <label style={label}>Type DELETE to confirm</label>
@@ -143,7 +154,12 @@ export default function ProviderAccount() {
           style={input}
         />
 
-        <button type="button" style={btnDanger} onClick={deleteAccount} disabled={deleting}>
+        <button
+          type="button"
+          style={btnDanger}
+          onClick={deleteAccount}
+          disabled={deleting}
+        >
           {deleting ? "Deleting..." : "Delete My Account"}
         </button>
       </div>

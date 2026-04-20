@@ -1,0 +1,41 @@
+{
+  "12345": {
+    "patientId": "12345",
+    "hasHistory": true,
+    "lastVisit": "2026-02-14",
+    "conditions": [
+      "Chronic sinusitis",
+      "Seasonal allergic rhinitis"
+    ],
+    "medications": [
+      "Fluticasone nasal spray",
+      "Cetirizine"
+    ],
+    "allergies": [
+      "Penicillin"
+    ],
+    "notes": "Prior ENT follow-up for recurrent sinus pressure and congestion."
+  },
+  "ABCD-123": {
+    "patientId": "ABCD-123",
+    "hasHistory": true,
+    "lastVisit": "2025-11-03",
+    "conditions": [
+      "Recurrent otitis externa"
+    ],
+    "medications": [
+      "Acetic acid ear drops"
+    ],
+    "allergies": [],
+    "notes": "History of right ear pain after swimming."
+  },
+  "NEWPATIENT": {
+    "patientId": "NEWPATIENT",
+    "hasHistory": false,
+    "lastVisit": null,
+    "conditions": [],
+    "medications": [],
+    "allergies": [],
+    "notes": ""
+  }
+}

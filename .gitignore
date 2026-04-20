@@ -37,13 +37,5 @@ yarn-error.log*
 /Backend/imageRetrieval/src
 /Backend/__pycache__
 /Backend/imageRetrieval/index
-Backend/healthlakeproxy/rbac.db-wal
-Backend/healthlakeproxy/rbac.db-shm
-Backend/healthlakeproxy/rbac.db-shm
-Backend/healthlakeproxy/rbac.db-wal
-Backend/healthlakeproxy/rbac.db-shm
-
-# Patient uploaded PDF documents
-*.pdf
-Backend/uploads/
-Backend/patient_uploads/
+/Backend/healthlakeproxy/node_modules/@smithy
+/Backend/healthlakeproxy/node_modules

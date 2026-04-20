@@ -3,9 +3,9 @@ import json
 
 import numpy as np
 import faiss
-from sentence_transformers import SentenceTransformer
 
 from .query_reformulation import align_to_dataset_style
+from .embedder import get_embedder
 
 
 _INDEX_CACHE = {}  #  faiss_path & use_mmap is index
@@ -109,10 +109,25 @@ def search_topk_state(
 
     summary = make_patient_summary(symptoms_text, duration_text, comorbidities, location, side)
     aligned = align_to_dataset_style(summary)
+    if not aligned:
+        state = {
+            "patient": patient,
+            "query": {"summary": summary, "aligned_phrases": aligned},
+            "results": [],
+            "note": "No searchable symptoms were provided.",
+        }
+        if include_per_phrase_hits:
+            state["per_phrase_hits"] = []
+        return state
 
-    embedder = SentenceTransformer(embed_model)
+    embedder = get_embedder(embed_model)
 
     Q = embedder.encode(aligned, convert_to_numpy=True, normalize_embeddings=True).astype(np.float32)
+    Q = np.atleast_2d(Q)
+    if Q.shape[1] != index.d:
+        raise RuntimeError(
+            f"Embedding dimension mismatch: query_dim={Q.shape[1]}, index_dim={index.d}"
+        )
     k = max(int(search_k), int(top_k), 25)
     scores, idxs = index.search(Q, k=k)
 

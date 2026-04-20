@@ -1,11 +1,13 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
+import fs from "node:fs";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { fromIni } from "@aws-sdk/credential-provider-ini";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 import cookieParser from "cookie-parser";
@@ -31,9 +33,26 @@ import {
 } from "./rbac_db.js";
 
 const app = express();
-app.use(cors({ origin: ["http://localhost:5173"], 
-credentials: true,
-}));
+const mockPatientHistoryPath = new URL("./mock_patient_history.json", import.meta.url);
+const mockPatientHistory = JSON.parse(
+  fs.readFileSync(mockPatientHistoryPath, "utf8")
+);
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -112,7 +131,32 @@ async function callModelTriage({ patientId, answers, transcript }) {
     }
 
     const rationale = data.rationale || "Model did not provide rationale.";
-    return { color, rationale };
+    const confidence =
+      typeof data.confidence === "number" && Number.isFinite(data.confidence)
+        ? data.confidence
+        : null;
+    const final_confidence =
+      typeof data.final_confidence === "number" && Number.isFinite(data.final_confidence)
+        ? data.final_confidence
+        : null;
+    const model_color =
+      typeof data.model_color === "string" && data.model_color.trim()
+        ? String(data.model_color).toLowerCase()
+        : null;
+    const used_fallback = data.used_fallback === true;
+    const label_probs =
+      data.label_probs && typeof data.label_probs === "object"
+        ? data.label_probs
+        : null;
+    return {
+      color,
+      rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
+    };
 
   } catch (err) {
     console.error(`[DEBUG] CallModelTriage FAILED: ${err.message}`);
@@ -133,6 +177,168 @@ function extractServiceError(data, fallback) {
   }
   return fallback;
 }
+
+function buildProviderImageProxyUrl(req, imageName) {
+  if (!imageName) return "";
+  return `/api/provider/image-file?name=${encodeURIComponent(imageName)}`;
+}
+
+function getMockPatientHistory(patientId) {
+  const normalized = String(patientId || "").trim();
+  if (!normalized) return null;
+
+  return mockPatientHistory[normalized] || {
+    patientId: normalized,
+    hasHistory: false,
+    lastVisit: null,
+    conditions: [],
+    medications: [],
+    allergies: [],
+    notes: "",
+  };
+}
+
+function getObservationDate(obs) {
+  return (
+    obs?.effectiveDateTime ||
+    obs?.issued ||
+    obs?.meta?.lastUpdated ||
+    null
+  );
+}
+
+function readTriageColorFromObservation(obs) {
+  let color =
+    obs?.valueCodeableConcept?.text ||
+    obs?.valueCodeableConcept?.coding?.[0]?.code ||
+    "";
+  color = String(color || "").toLowerCase();
+
+  if (!["red", "orange", "yellow", "green"].includes(color)) {
+    const notesText = (obs?.note || [])
+      .map((n) => n?.text || "")
+      .join(" ");
+    const match = /(triage(?:\s*color)?\s*:\s*)(red|orange|yellow|green)/i.exec(notesText);
+    color = String(match?.[2] || "").toLowerCase();
+  }
+
+  return color || null;
+}
+
+function readTriageRationaleFromObservation(obs) {
+  const rationaleNote = findObservationNote(obs, /^rationale\s*:/i) || "";
+  return rationaleNote.replace(/^rationale\s*:\s*/i, "").trim() || null;
+}
+
+function isTriageObservation(obs) {
+  const codeText = String(obs?.code?.text || "").toLowerCase();
+  const coding = obs?.code?.coding || [];
+  return (
+    codeText.includes("triage") ||
+    coding.some((entry) =>
+      String(entry?.system || "").includes("triage") ||
+      String(entry?.code || "").toLowerCase().includes("triage")
+    ) ||
+    !!readTriageColorFromObservation(obs) ||
+    !!readTriageRationaleFromObservation(obs)
+  );
+}
+
+async function fetchPatientTriageObservations(patientId) {
+  const encodedPatientId = encodeURIComponent(patientId);
+  const queries = [
+    `subject=Patient/${encodedPatientId}&_count=50&_sort=-date`,
+    `patient=${encodedPatientId}&_count=50&_sort=-date`,
+    `_count=100&_sort=-_lastUpdated`,
+  ];
+
+  let lastError = null;
+  for (const query of queries) {
+    try {
+      const bundle = await signedFetch({ path: "/Observation", query });
+      const observations = (bundle?.entry || [])
+        .map((entry) => entry?.resource)
+        .filter((resource) => resource?.resourceType === "Observation")
+        .filter((obs) => {
+          const ref = String(obs?.subject?.reference || "");
+          return !ref || ref === `Patient/${patientId}`;
+        })
+        .filter(isTriageObservation);
+
+      if (observations.length || !query.startsWith("_count=")) {
+        return observations;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "[HL WARN] patient history observation lookup failed",
+      lastError.status || "",
+      lastError.message || ""
+    );
+  }
+  return [];
+}
+
+async function getPatientHistory(patientId, { excludeObservationId = null } = {}) {
+  const normalized = String(patientId || "").trim();
+  if (!normalized) return null;
+
+  const mock = getMockPatientHistory(normalized);
+  const observations = (await fetchPatientTriageObservations(normalized))
+    .filter((obs) => !excludeObservationId || obs?.id !== excludeObservationId)
+    .map((obs) => {
+      const flags = readTriageFlagsFromObservation(obs);
+      return {
+        observationId: obs?.id || null,
+        date: getObservationDate(obs),
+        color: readTriageColorFromObservation(obs),
+        rationale: readTriageRationaleFromObservation(obs),
+        scheduled: !!flags?.scheduled,
+        appointmentAt: flags?.appointmentAt || null,
+      };
+    })
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+  const scheduled = observations
+    .filter((item) => item.appointmentAt)
+    .sort(
+      (a, b) =>
+        new Date(b.appointmentAt || 0).getTime() -
+        new Date(a.appointmentAt || 0).getTime()
+    );
+  const lastTriage = observations.find((item) => item.rationale || item.color) || null;
+
+  return {
+    ...mock,
+    patientId: normalized,
+    source: observations.length ? "healthlake" : "mock",
+    hasHistory: Boolean(mock?.hasHistory || observations.length),
+    lastVisit: scheduled[0]?.appointmentAt || mock?.lastVisit || null,
+    lastScheduledAt: scheduled[0]?.appointmentAt || null,
+    lastTriageDate: lastTriage?.date || null,
+    lastTriageColor: lastTriage?.color || null,
+    lastTriageRationale: lastTriage?.rationale || null,
+    triageHistory: observations.slice(0, 5),
+  };
+}
+
+app.get("/api/patient-history/:patientId", async (req, res) => {
+  const patientId = String(req.params.patientId || "").trim();
+  if (!patientId) {
+    return res.status(400).json({ error: "patientId is required" });
+  }
+
+  try {
+    const history = await getPatientHistory(patientId);
+    return res.json(history);
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message });
+  }
+});
 
 app.post("/api/patient-chat", async (req, res) => {
   try {
@@ -306,6 +512,16 @@ async function requireAuth(req, res, next) {
     // fallback: cookie
     if (!token && req.cookies?.access_token) token = req.cookies.access_token;
 
+    console.log("[AUTH DEBUG]", {
+      path: req.path,
+      method: req.method,
+      hasAuthorizationHeader: Boolean(bearer),
+      hasAccessTokenCookie: Boolean(req.cookies?.access_token),
+      hasRefreshTokenCookie: Boolean(req.cookies?.refresh_token),
+      cookieKeys: Object.keys(req.cookies || {}),
+      origin: req.headers.origin || null,
+    });
+
     if (!token) return res.status(401).json({ error: "Missing token" });
 
     const decoded = await verifyToken(token);
@@ -391,6 +607,52 @@ function readTriageFlagsFromObservation(obs) {
     (e) => e.url === "http://example.org/triage-flags"
   );
   return normalizeTriageFlags(parseJsonOrNull(flagsExt?.valueString) || {});
+}
+
+function findObservationNote(obs, pattern) {
+  return (obs?.note || [])
+    .map((entry) => entry?.text || "")
+    .find((text) => pattern.test(text));
+}
+
+function readObservationExtensionJson(obs, url) {
+  const entry = (obs?.extension || []).find((ext) => ext.url === url);
+  return parseJsonOrNull(entry?.valueString);
+}
+
+function readTranscriptFromObservation(obs) {
+  const transcriptNote = findObservationNote(obs, /^transcript\s*:/i);
+  if (!transcriptNote) return null;
+  return transcriptNote.replace(/^transcript\s*:\s*/i, "").trim() || null;
+}
+
+function readModelAccuracyFromObservation(obs) {
+  const metrics =
+    readObservationExtensionJson(obs, "http://example.org/triage-model-metrics") ||
+    readObservationExtensionJson(obs, "http://example.org/model-metrics");
+
+  if (metrics && typeof metrics === "object") {
+    const accuracy =
+      metrics.finalConfidence ??
+      metrics.modelAccuracy ??
+      metrics.accuracy ??
+      metrics.confidence ??
+      null;
+    if (accuracy !== null && accuracy !== undefined && accuracy !== "") {
+      return accuracy;
+    }
+  }
+
+  const note = findObservationNote(obs, /^model\s*accuracy\s*:/i);
+  if (!note) return null;
+  return note.replace(/^model\s*accuracy\s*:\s*/i, "").trim() || null;
+}
+
+function readOverrideFromObservation(obs) {
+  return (
+    readObservationExtensionJson(obs, "http://example.org/triage-override") ||
+    null
+  );
 }
 
 app.get("/api/me", requireAuth, requireActiveMembership, (req, res) => {
@@ -483,7 +745,16 @@ app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res
       return res.status(400).json({ error: "confirm must be DELETE" });
     }
 
-    const cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    let cognitoResult = null;
+    try {
+      cognitoResult = await deleteCognitoUserBySub(req.user?.sub);
+    } catch (cognitoError) {
+      cognitoResult = {
+        deleted: false,
+        reason: cognitoError?.message || "cognito_delete_failed",
+      };
+    }
+
     disableSelfAccount({ user_id: req.userId });
 
     logAudit({
@@ -499,7 +770,12 @@ app.delete("/api/account", requireAuth, requireActiveMembership, async (req, res
     res.clearCookie("access_token", { path: "/", sameSite: "lax", secure });
     res.clearCookie("refresh_token", { path: "/", sameSite: "lax", secure });
 
-    res.json({ ok: true, deleted: true, cognito: cognitoResult });
+    res.json({
+      ok: true,
+      deleted: true,
+      cognito: cognitoResult,
+      warning: cognitoResult?.deleted === false ? "Local account disabled, Cognito cleanup did not complete." : null,
+    });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -615,7 +891,24 @@ const providerOptions = {};
 if (process.env.AWS_PROFILE) {
   providerOptions.profile = process.env.AWS_PROFILE;
 }
-const credentials = fromNodeProviderChain(providerOptions);
+const credentials = process.env.AWS_PROFILE
+  ? fromIni({ profile: process.env.AWS_PROFILE })
+  : fromNodeProviderChain(providerOptions);
+
+async function logResolvedAwsCredentials() {
+  const resolved = await credentials();
+  console.log("[AWS DEBUG] resolved credentials", {
+    accessKeyPrefix: resolved?.accessKeyId?.slice(0, 8) || null,
+    hasSessionToken: Boolean(resolved?.sessionToken),
+    expiration:
+      resolved?.expiration instanceof Date
+        ? resolved.expiration.toISOString()
+        : resolved?.expiration || null,
+    profile: process.env.AWS_PROFILE || null,
+    region: process.env.AWS_REGION || process.env.REGION || null,
+  });
+  return resolved;
+}
 let cognitoSdk = null;
 let cognitoAdminClient = null;
 
@@ -721,8 +1014,21 @@ console.log("[INIT] HealthLake Proxy starting with:", {
   HAS_PROFILE: !!process.env.AWS_PROFILE
 });
 
+logResolvedAwsCredentials().catch((err) => {
+  console.error("[AWS DEBUG] failed to resolve credentials", err);
+});
+
 async function signedFetch({ method = "GET", path = "", query = "", body }) {
   const queryParams = query ? Object.fromEntries(new URLSearchParams(query)) : undefined;
+
+  const resolved = await logResolvedAwsCredentials();
+  console.log("[AWS DEBUG] signing request", {
+    method,
+    path,
+    query,
+    accessKeyPrefix: resolved?.accessKeyId?.slice(0, 8) || null,
+    hasSessionToken: Boolean(resolved?.sessionToken),
+  });
 
   const req = new HttpRequest({
     method,
@@ -916,7 +1222,15 @@ app.post("/api/intake", async (req, res) => {
     }
 
     // 1) Ask classifier model
-    const { color, rationale } = await callModelTriage({
+    const {
+      color,
+      rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
+    } = await callModelTriage({
       patientId,
       answers,
       transcript,
@@ -966,6 +1280,18 @@ app.post("/api/intake", async (req, res) => {
           url: "http://example.org/triage-answers",
           valueString: JSON.stringify(answers),
         },
+        {
+          url: "http://example.org/triage-model-metrics",
+          valueString: JSON.stringify({
+            modelAccuracy: final_confidence,
+            confidence,
+            finalConfidence: final_confidence,
+            modelColor: model_color,
+            finalColor: color,
+            usedFallback: used_fallback,
+            label_probs: label_probs || null,
+          }),
+        },
       ],
     };
 
@@ -986,6 +1312,11 @@ app.post("/api/intake", async (req, res) => {
       id: created?.id || null,
       color,
       rationale,
+      confidence,
+      final_confidence,
+      model_color,
+      used_fallback,
+      label_probs,
       answers,
     });
   } catch (e) {
@@ -996,7 +1327,12 @@ app.post("/api/intake", async (req, res) => {
 // ---------------------------------------------------------
 // TRIAGE DETAIL (PROTECTED)
 // ---------------------------------------------------------
-app.get("/api/triage-detail", requireAuth, async (req, res) => {
+app.get(
+  "/api/triage-detail",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
   try {
     const riskId = String(req.query.riskId || "").trim();
     if (!riskId) {
@@ -1026,10 +1362,7 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
     }
 
     // --- rationale ---
-    const rationaleNote =
-      (obs.note || [])
-        .map((n) => n?.text || "")
-        .find((t) => /^rationale\s*:/i.test(t)) || "";
+    const rationaleNote = findObservationNote(obs, /^rationale\s*:/i) || "";
     const rationale = rationaleNote.replace(/^rationale\s*:\s*/i, "") || "";
 
     // --- answers ---
@@ -1047,12 +1380,17 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
 
     // --- flags ---
     const flags = readTriageFlagsFromObservation(obs);
+    const transcript = readTranscriptFromObservation(obs);
+    const modelAccuracy = readModelAccuracyFromObservation(obs);
+    const override = readOverrideFromObservation(obs);
 
     // --- patient info (non-fatal) ---
     let patient = null;
+    let patientHistory = null;
     const patientRef = obs?.subject?.reference; // e.g. "Patient/patien0"
     if (patientRef && /^Patient\//.test(patientRef)) {
       const pid = patientRef.replace(/^Patient\//, "");
+      patientHistory = await getPatientHistory(pid, { excludeObservationId: obs.id });
       try {
         const p = await signedFetch({
           path: `/Patient/${encodeURIComponent(pid)}`,
@@ -1080,9 +1418,13 @@ app.get("/api/triage-detail", requireAuth, async (req, res) => {
         null,
       color: color || null,
       rationale: rationale || null,
+      transcript,
+      modelAccuracy,
       answers,
       patient,
+      patientHistory,
       flags,
+      override,
     });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
@@ -1127,7 +1469,18 @@ app.post(
           : { error: await upstream.text() };
 
         if (upstream.ok) {
-          return res.json(data);
+          const images = Array.isArray(data?.images)
+            ? data.images.map((img) => ({
+                ...img,
+                sourceImageUrl: img?.imageUrl || "",
+                imageUrl: buildProviderImageProxyUrl(req, img?.imageName),
+              }))
+            : [];
+
+          return res.json({
+            ...data,
+            images,
+          });
         }
 
         lastStatus = upstream.status || 502;
@@ -1149,6 +1502,50 @@ app.post(
     } catch (e) {
       return res.status(502).json({
         error: e?.message || "Image retrieval service is unavailable",
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/provider/image-file",
+  requireAuth,
+  requireActiveMembership,
+  requirePermission("triage.read"),
+  async (req, res) => {
+    try {
+      const imageName = String(req.query.name || "").trim();
+      if (!imageName) {
+        return res.status(400).json({ error: "name is required" });
+      }
+
+      if (imageName.includes("/") || imageName.includes("\\")) {
+        return res.status(400).json({ error: "invalid image name" });
+      }
+
+      const base = String(IMAGE_RETRIEVAL_URL || "").replace(/\/$/, "");
+      const upstreamUrl = `${base}/images/${encodeURIComponent(imageName)}`;
+      const upstream = await fetch(upstreamUrl);
+
+      if (!upstream.ok) {
+        const text = await upstream.text();
+        return res.status(upstream.status || 502).json({
+          error: text || `Image file request failed (${upstream.status || 502})`,
+        });
+      }
+
+      const contentType = upstream.headers.get("content-type") || "application/octet-stream";
+      const cacheControl = upstream.headers.get("cache-control");
+      const arrayBuffer = await upstream.arrayBuffer();
+
+      res.setHeader("content-type", contentType);
+      if (cacheControl) {
+        res.setHeader("cache-control", cacheControl);
+      }
+      return res.send(Buffer.from(arrayBuffer));
+    } catch (e) {
+      return res.status(502).json({
+        error: e?.message || "Image file service is unavailable",
       });
     }
   }
@@ -1265,7 +1662,7 @@ app.get(
 );
 
 // ---------------------------------------------------------
-// FLAGS (contacted/scheduled etc.) – PROTECTED
+// FLAGS (contacted/scheduled etc.) - PROTECTED
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/flags",
@@ -1329,7 +1726,7 @@ app.patch(
 );
 /*Need to fix later on. Dont use alert can crash system*/
 // ---------------------------------------------------------
-// OVERRIDE COLOR – PROTECTED 
+// OVERRIDE COLOR - PROTECTED 
 // ---------------------------------------------------------
 app.patch(
   "/api/triage-cases/:riskId/override",
@@ -1538,16 +1935,16 @@ app.post(
       const { membership_id } = req.body || {};
       if (!membership_id) return res.status(400).json({ error: "membership_id required" });
 
-        disableMember({ membership_id: Number(membership_id) });
+        const disabled = disableMember({ membership_id: Number(membership_id) });
         logAudit({
             actor_membership_id: req.membership.id,
             actor_user_id: req.userId,
             action: "member.disable",
             resource_type: "membership",
             resource_id: String(membership_id),
-            details: {},
+            details: { membership_id: Number(membership_id), status: disabled?.status || "disabled" },
         });
-      res.json({ ok: true });
+      res.json({ ok: true, membership: disabled });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }

@@ -42,6 +42,7 @@ def build_docs(data_dir: str) -> Tuple[List[Dict[str, Any]], str]:
     i2i = load_json(i2i_path) if os.path.exists(i2i_path) else {}
 
     existing_imgs = set(os.listdir(imgs_dir)) if os.path.isdir(imgs_dir) else set()
+    img_name_lookup = {name.lower(): name for name in existing_imgs}
 
     neighbors: Dict[str, set] = {}
     if isinstance(i2i, dict):
@@ -68,38 +69,44 @@ def build_docs(data_dir: str) -> Tuple[List[Dict[str, Any]], str]:
             continue
 
         for img in imgs:
-            if not img or img not in existing_imgs:
+            if not img:
+                continue
+            actual_img = img_name_lookup.get(img.lower())
+            if not actual_img:
                 continue
 
-            lbl = clean(cls.get(img, ""))
-            key = (desc, img)
+            lbl = clean(cls.get(img, cls.get(actual_img, "")))
+            key = (desc, actual_img)
             if key not in seen:
                 docs.append({
                     "desc": desc,
-                    "img": img,
-                    "img_path": os.path.join(imgs_dir, img),
+                    "img": actual_img,
+                    "img_path": os.path.join(imgs_dir, actual_img),
                     "label": lbl,
                     "region": region_from_label(lbl),
                     "side": side_from_label(lbl),
-                    "linked": sorted(neighbors.get(img, ())),
+                    "linked": sorted(neighbors.get(img, neighbors.get(actual_img, ()))),
                 })
                 seen.add(key)
 
             for other in neighbors.get(img, ()):
                 other = clean(other)
-                if not other or other not in existing_imgs:
+                if not other:
                     continue
-                other_lbl = clean(cls.get(other, ""))
-                other_key = (desc, other)
+                actual_other = img_name_lookup.get(other.lower())
+                if not actual_other:
+                    continue
+                other_lbl = clean(cls.get(other, cls.get(actual_other, "")))
+                other_key = (desc, actual_other)
                 if other_key not in seen:
                     docs.append({
                         "desc": desc,
-                        "img": other,
-                        "img_path": os.path.join(imgs_dir, other),
+                        "img": actual_other,
+                        "img_path": os.path.join(imgs_dir, actual_other),
                         "label": other_lbl,
                         "region": region_from_label(other_lbl),
                         "side": side_from_label(other_lbl),
-                        "linked": sorted(neighbors.get(other, ())),
+                        "linked": sorted(neighbors.get(other, neighbors.get(actual_other, ()))),
                     })
                     seen.add(other_key)
 

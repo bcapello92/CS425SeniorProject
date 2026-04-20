@@ -1,35 +1,30 @@
 ﻿// hl-ui/src/App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./AppLayout.jsx";
+import LandingPage from "./LandingPage.jsx";
 import PatientChatIntake from "./PatientChatIntake.jsx";
 import ProviderHome from "./ProviderHome.jsx";
 import ProviderTriage from "./ProviderTriage.jsx";
 import ProviderSchedule from "./ProviderSchedule.jsx";
 import LoginRedirect from "./LoginRedirect.jsx";
 import AuthCallback from "./AuthCallback.jsx";
-import ProviderAccount from "./ProviderAccount.jsx"
+import ProviderAccount from "./ProviderAccount.jsx";
 import AdminHome from "./AdminHome.jsx";
 import AccountManagement from "./AccountManagment.jsx";
 import AdminAudit from "./AdminAudit.jsx";
-import ProviderUpload from "./ProviderUpload.jsx";
 import { useAuth } from "./useAuth.jsx";
 import { useEffect } from "react";
-
-
 
 function Protected({ children }) {
   const { loading, isAuthenticated, login } = useAuth();
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      // send them to Cognito and come back to the current page
       login(window.location.pathname);
     }
   }, [loading, isAuthenticated, login]);
 
   if (loading) return <div style={{ padding: 16 }}>Checking login…</div>;
-
-  // While redirecting to Cognito, render a simple message
   if (!isAuthenticated) return <div style={{ padding: 16 }}>Redirecting to login…</div>;
 
   return children;
@@ -39,13 +34,11 @@ export default function App() {
   return (
     <AppLayout>
       <Routes>
-        {/* Public */}
-        <Route path="/" element={<PatientChatIntake />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/patient" element={<PatientChatIntake />} />
 
-        {/* Cognito login jump */}
         <Route path="/login" element={<LoginRedirect />} />
         <Route path="/staff/callback" element={<AuthCallback />} />
-        {/* Provider */}
         <Route
           path="/provider"
           element={
@@ -79,14 +72,6 @@ export default function App() {
           }
         />
         <Route
-          path="/provider/account"
-          element={
-            <Protected>
-              <ProviderAccount />
-            </Protected>
-          }
-        />
-        <Route
           path="/provider/admin"
           element={
             <Protected>
@@ -97,27 +82,19 @@ export default function App() {
         <Route
           path="/provider/admin/accounts"
           element={
-            <Protected><AccountManagement />
+            <Protected>
+              <AccountManagement />
             </Protected>
           }
-
         />
         <Route
           path="/provider/admin/audit"
           element={
-            <Protected><AdminAudit />
-            </Protected>
-          }
-        />
-        <Route
-          path="/provider/upload"
-          element={
             <Protected>
-              <ProviderUpload />
+              <AdminAudit />
             </Protected>
           }
         />
-        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>
