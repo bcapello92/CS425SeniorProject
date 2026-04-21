@@ -6,6 +6,7 @@ from deidentify_triage import _scrub_text_quick, age_bucket_hipaa, scrub_triage_
 
 import torch
 import json
+import re
 import torch.nn.functional as F
 
 MODEL_PATH = "llama32_ent_triage_cls_lora_merged"
@@ -214,8 +215,7 @@ Output rules (must follow exactly):
 - Keys must be exactly: "color", "rationale"
 - "color" must be exactly one of: "red", "orange", "blue"
 - "rationale" must be ONE sentence, max 20 words.
-- The rationale must mention only symptoms or risk factors explicitly present in the provided case. Use only medical descriptors and list it in the form of "primary symptom, then the severity, then the timing and how quicky it is progessing. Finally note any additional symptoms."
-- add a confidence score from 0 to 100 as well. 
+- The rationale must mention only symptoms or risk factors explicitly present in the provided case.
 - Do not copy stock phrases or example wording.
 """.strip()
 
@@ -318,7 +318,6 @@ def score_triage_labels(system_prompt: str, user_prompt: str):
 
 
 def extract_first_json_object(text: str) -> str | None:
-   
     if not text:
         return None
     s = text.strip()
@@ -334,7 +333,26 @@ def extract_first_json_object(text: str) -> str | None:
             depth -= 1
             if depth == 0:
                 return s[start : i + 1]
+
+    # If the model started a JSON object but got cut off before the closing brace,
+    # salvage the partial payload instead of forcing a keyword fallback.
+    partial = s[start:].rstrip()
+    if partial:
+        return partial
     return None
+
+
+def normalize_json_snippet(snippet: str) -> str:
+    cleaned = snippet.strip()
+    if not cleaned:
+        return cleaned
+
+    if not cleaned.endswith("}"):
+        cleaned = cleaned.rstrip(", \n\r\t") + "}"
+
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = cleaned.replace(",}", "}")
+    return cleaned
 
 
 def extract_json_color_and_rationale(model_output: str):
@@ -348,13 +366,21 @@ def extract_json_color_and_rationale(model_output: str):
     if snippet.startswith("{{") and snippet.endswith("}}"):
         snippet = snippet[1:-1]
 
+    snippet = normalize_json_snippet(snippet)
+
     try:
         data = json.loads(snippet)
         color = str(data.get("color", "")).strip().lower() or None
         rationale = str(data.get("rationale", "")).strip() or None
         return color, rationale
     except Exception:
-        return None, None
+        # Fallback parser for nearly-correct JSON such as a missing closing brace
+        # or a trailing comma after the last field.
+        color_match = re.search(r'"color"\s*:\s*"(red|orange|blue)"', snippet, re.IGNORECASE)
+        rationale_match = re.search(r'"rationale"\s*:\s*"([^"]+)"', snippet, re.IGNORECASE | re.DOTALL)
+        color = color_match.group(1).lower() if color_match else None
+        rationale = rationale_match.group(1).strip() if rationale_match else None
+        return color, rationale
 
 
 @app.post("/triage")
