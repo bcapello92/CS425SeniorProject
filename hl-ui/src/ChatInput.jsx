@@ -1,7 +1,17 @@
 import React, { useState } from "react";
 import "./Chatbot.css";
 /*Wiem code start*/
-const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText = "Send", externalValue, inputRef }) => {
+const ChatInput = ({
+  onSend,
+  placeholder = "Type your symptoms...",
+  buttonText = "Send",
+  externalValue,
+  inputRef,
+  onToggleVoice,
+  voiceEnabled = false,
+  isRecording = false,
+  disabled = false,
+}) => {
   const [input, setInput] = useState("");
 
   // Update internal state when externalValue changes
@@ -12,7 +22,7 @@ const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText =
   }, [externalValue]);
 
   const handleSend = () => {
-    if (input.trim() !== "") {
+    if (!disabled && input.trim() !== "") {
       onSend(input);
       setInput("");
     }
@@ -31,9 +41,22 @@ const ChatInput = ({ onSend, placeholder = "Type your symptoms...", buttonText =
         type="text"
         placeholder={placeholder}
         value={input}
+        disabled={disabled}
         onChange={(e) => setInput(e.target.value)}
         onKeyPress={handleKeyPress}
       />
+      {voiceEnabled ? (
+        <button
+          type="button"
+          onClick={onToggleVoice}
+          style={{
+            background: isRecording ? "#b91c1c" : "#1d4ed8",
+            minWidth: 54,
+          }}
+        >
+          {isRecording ? "Stop" : "Mic"}
+        </button>
+      ) : null}
       <button onClick={handleSend}>{buttonText}</button>
     </div>
   );

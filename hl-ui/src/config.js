@@ -16,6 +16,10 @@ export const PUBLIC_ORIGIN = normalizeBaseUrl(
 
 export const API_BASE = normalizeBaseUrl(import.meta.env.VITE_API_BASE, "");
 export const CHAT_BASE = normalizeBaseUrl(import.meta.env.VITE_CHAT_BASE, "");
+export const VOICE_BASE = normalizeBaseUrl(
+  import.meta.env.VITE_VOICE_BASE,
+  ""
+);
 
 export const COGNITO_DOMAIN =
   import.meta.env.VITE_COGNITO_DOMAIN ||

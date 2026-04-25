@@ -67,7 +67,7 @@ def submit_direct_to_triage(
     transcript: str,
 ) -> Dict[str, Any]:
     payload = {
-        "patient_id": patient_id or "voice-input-patient",
+        "patientId": patient_id or "voice-input-patient",
         "transcript": transcript,
         "answers": triage_answers,
     }

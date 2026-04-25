@@ -6,6 +6,7 @@ import SuggestionChips from "./SuggestionChips.jsx";
 import { triageClient } from "./triageClient";
 import { handleUserMessage as sharedHandleUserMessage, uiToApiMessages, buildTranscript, buildAnswers, getSmartSuggestions } from "./ChatbotLogic";
 import { translateTranscript, uploadPatientPdf } from "./ollamaChatClient";
+import { VoiceStreamRecorder, voiceFeatureAvailable } from "./voiceClient";
 import "./Chatbot.css";
 
 
@@ -95,6 +96,10 @@ export default function PatientChatIntake() {
   const [showPdfUpload, setShowPdfUpload] = useState(false);
   const [awaitingFinalConfirmation, setAwaitingFinalConfirmation] = useState(false);
   const pdfInputRef = useRef(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState(null);
+  const voiceRecorderRef = useRef(null);
+  const voiceAvailable = voiceFeatureAvailable();
 
   const hasStartedChat = patientId !== null;
 
@@ -108,6 +113,15 @@ export default function PatientChatIntake() {
       win.scrollTop = win.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    return () => {
+      const recorder = voiceRecorderRef.current;
+      if (recorder) {
+        recorder.stop().catch(() => {});
+      }
+    };
+  }, []);
 
   // Show PDF upload button ONLY when the bot asks the specific "previous tests" question (step 9)
   useEffect(() => {
@@ -222,6 +236,71 @@ export default function PatientChatIntake() {
       getTimestamp,
       language // Pass language to backend
     });
+  };
+
+  const handleToggleVoice = async () => {
+    if (!hasStartedChat || isTyping || submitting) return;
+
+    if (isRecordingVoice) {
+      setIsRecordingVoice(false);
+      await voiceRecorderRef.current?.stop();
+      return;
+    }
+
+    try {
+      setVoiceError(null);
+      const lastBotText =
+        [...messages].reverse().find((msg) => msg?.sender === "bot")?.text ||
+        "Voice input";
+
+      const recorder = new VoiceStreamRecorder({
+        questionText: lastBotText,
+        onPartial: (text) => {
+          if (text) setEditingValue(text);
+        },
+        onFinal: (text) => {
+          setIsRecordingVoice(false);
+          voiceRecorderRef.current = null;
+          const finalText = String(text || "").trim();
+          setEditingValue(undefined);
+          if (finalText) {
+            handleUserMessage(finalText);
+          } else {
+            setVoiceError(
+              language === "es"
+                ? "No se detectó voz. Inténtelo de nuevo."
+                : "No speech detected. Please try again."
+            );
+          }
+        },
+        onError: (message) => {
+          setIsRecordingVoice(false);
+          voiceRecorderRef.current = null;
+          setEditingValue(undefined);
+          setVoiceError(
+            message ||
+              (language === "es"
+                ? "La entrada de voz no está disponible."
+                : "Voice input is unavailable.")
+          );
+        },
+      });
+
+      voiceRecorderRef.current = recorder;
+      setEditingValue("");
+      await recorder.start();
+      setIsRecordingVoice(true);
+    } catch (err) {
+      voiceRecorderRef.current = null;
+      setIsRecordingVoice(false);
+      setEditingValue(undefined);
+      setVoiceError(
+        err?.message ||
+          (language === "es"
+            ? "No se pudo iniciar el micrófono."
+            : "Could not start the microphone.")
+      );
+    }
   };
 
   const handleEditMessage = (index) => {
@@ -530,6 +609,11 @@ export default function PatientChatIntake() {
                 />
               )}
 
+              {voiceError ? (
+                <div style={{ color: "#b91c1c", fontSize: "0.9em", padding: "0 16px 8px" }}>
+                  {voiceError}
+                </div>
+              ) : null}
 
 
 
@@ -542,6 +626,10 @@ export default function PatientChatIntake() {
                     buttonText={t.sendButton}
                     externalValue={editingValue}
                     inputRef={inputRef}
+                    onToggleVoice={handleToggleVoice}
+                    voiceEnabled={voiceAvailable && hasStartedChat}
+                    isRecording={isRecordingVoice}
+                    disabled={submitting}
                   />
                 </div>
 

@@ -2,9 +2,11 @@ param(
     [int]$TriagePort = 8000,
     [int]$ImagePort = 8001,
     [int]$ChatPort = 8002,
+    [int]$VoicePort = 8003,
     [int]$TriageHttpsPort = 8443,
     [int]$ImageHttpsPort = 8445,
     [int]$ChatHttpsPort = 8444,
+    [int]$VoiceHttpsPort = 8446,
     [string]$ImageDataDir,
     [string]$ImageIndexDir,
     [switch]$SkipServe,
@@ -34,9 +36,11 @@ $arguments = @(
     "-TriagePort", $TriagePort,
     "-ImagePort", $ImagePort,
     "-ChatPort", $ChatPort,
+    "-VoicePort", $VoicePort,
     "-TriageHttpsPort", $TriageHttpsPort,
     "-ImageHttpsPort", $ImageHttpsPort,
-    "-ChatHttpsPort", $ChatHttpsPort
+    "-ChatHttpsPort", $ChatHttpsPort,
+    "-VoiceHttpsPort", $VoiceHttpsPort
 )
 
 if ($ImageDataDir) {

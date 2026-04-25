@@ -195,15 +195,19 @@ The hosted website runs the frontend and HealthLake/Cognito proxy on the VM. The
   - Triage API on Tailscale HTTPS port `8443`
   - Chat service on Tailscale HTTPS port `8444`
   - Image retrieval on Tailscale HTTPS port `8445`
+  - Voice input service on Tailscale HTTPS port `8446`
 
 Frontend env on the VM (`hl-ui/.env.local`):
 
 ```powershell
 VITE_PUBLIC_ORIGIN=https://enttriage.unr.dev
 VITE_API_BASE=/api
-VITE_CHAT_BASE=https://your-gpu-host.your-tailnet.ts.net:8444
+VITE_CHAT_BASE=/chat
+VITE_VOICE_BASE=/voice-api
+VITE_DEV_CHAT_TARGET=https:
+VITE_DEV_VOICE_TARGET=
 VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
-VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
+VITE_COGNITO_CLIENT_ID=
 VITE_COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
 VITE_COGNITO_LOGOUT_URI=https://enttriage.unr.dev/
 ```
@@ -215,9 +219,9 @@ PORT=4000
 NODE_ENV=production
 ALLOWED_ORIGINS=https://enttriage.unr.dev
 COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
-MODEL_URL=https://your-gpu-host.your-tailnet.ts.net:8443
-CHAT_SERVICE_URL=https://your-gpu-host.your-tailnet.ts.net:8444
-IMAGE_RETRIEVAL_URL=https://your-gpu-host.your-tailnet.ts.net:8445
+MODEL_URL=https:
+CHAT_SERVICE_URL=https:
+IMAGE_RETRIEVAL_URL=https:
 ```
 
 Start the proxy on the VM:
@@ -261,7 +265,8 @@ That script:
 - starts the triage API on `127.0.0.1:8000`
 - starts the chat service on `127.0.0.1:8002`
 - starts the image retrieval service on `127.0.0.1:8001`
-- publishes them privately to your tailnet with Tailscale Serve on HTTPS ports `8443`, `8444`, and `8445`
+- starts the voice input service on `127.0.0.1:8003`
+- publishes them privately to your tailnet with Tailscale Serve on HTTPS ports `8443`, `8444`, `8445`, and `8446`
 
 The resulting URLs look like:
 
@@ -269,6 +274,7 @@ The resulting URLs look like:
 https://your-gpu-host.your-tailnet.ts.net:8443/triage
 https://your-gpu-host.your-tailnet.ts.net:8444/chat
 https://your-gpu-host.your-tailnet.ts.net:8445/search-images
+https://your-gpu-host.your-tailnet.ts.net:8446/health
 ```
 
 To consume those services from another machine, set:
@@ -277,8 +283,13 @@ To consume those services from another machine, set:
 - `CHAT_SERVICE_URL=https://your-gpu-host.your-tailnet.ts.net:8444`
 - `IMAGE_RETRIEVAL_URL=https://your-gpu-host.your-tailnet.ts.net:8445`
 
-If the frontend needs to call the chatbot service directly from the browser, also set:
+For the hosted public website, keep browser requests on the website origin and proxy them through Vite:
 
-- `VITE_CHAT_BASE=https://your-gpu-host.your-tailnet.ts.net:8444`
+- `VITE_CHAT_BASE=/chat`
+- `VITE_VOICE_BASE=/voice-api`
+- `VITE_DEV_CHAT_TARGET=https://your-gpu-host.your-tailnet.ts.net:8444`
+- `VITE_DEV_VOICE_TARGET=https://your-gpu-host.your-tailnet.ts.net:8446`
 
-A copyable template is included at `Backend/tailscale_models.env.example`.
+`/voice-api` is configured as a websocket-capable proxy to the Tailscale voice service, so public users on `enttriage.unr.dev` do not need Tailscale installed in their browser/device.
+
+

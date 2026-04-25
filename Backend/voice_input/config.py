@@ -39,7 +39,7 @@ class Settings:
 
     image_api_url: str = os.getenv(
         "VOICE_IMAGE_API_URL",
-        "http://127.0.0.1:8002/search-images",
+        "http://127.0.0.1:8001/search-images",
     )
 
     enable_image_retrieval: bool = os.getenv(
