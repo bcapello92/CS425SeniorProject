@@ -2,11 +2,9 @@ param(
     [int]$TriagePort = 8000,
     [int]$ImagePort = 8001,
     [int]$ChatPort = 8002,
-    [int]$VoicePort = 8003,
     [int]$TriageHttpsPort = 8443,
     [int]$ImageHttpsPort = 8445,
     [int]$ChatHttpsPort = 8444,
-    [int]$VoiceHttpsPort = 8446,
     [string]$ImageDataDir,
     [string]$ImageIndexDir,
     [switch]$SkipServe,
@@ -151,7 +149,6 @@ $script:TailscaleExe = Get-TailscaleExe
 $pythonExe = Get-VenvPython
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $imageDir = Join-Path $PSScriptRoot "imageRetrieval"
-$voiceDir = Join-Path $PSScriptRoot "voice_input"
 
  $ImageDataDir = Resolve-ImageDataDir -Candidate $ImageDataDir
 
@@ -163,7 +160,6 @@ $tailscaleInfo = Get-TailscaleInfo
 $triageUrl = "https://{0}:{1}" -f $tailscaleInfo.DnsName, $TriageHttpsPort
 $chatUrl = "https://{0}:{1}" -f $tailscaleInfo.DnsName, $ChatHttpsPort
 $imageUrl = "https://{0}:{1}" -f $tailscaleInfo.DnsName, $ImageHttpsPort
-$voiceUrl = "https://{0}:{1}" -f $tailscaleInfo.DnsName, $VoiceHttpsPort
 
 Write-Host "Starting model services on localhost for Tailscale..."
 
@@ -187,19 +183,9 @@ Start-ServiceWindow `
         IMAGE_BASE_URL = $imageUrl
     }
 
-Start-ServiceWindow `
-    -Title "Voice Input (Tailscale)" `
-    -WorkingDirectory $PSScriptRoot `
-    -Command "& '$pythonExe' -m uvicorn voice_input.app:app --host 127.0.0.1 --port $VoicePort" `
-    -Environment @{
-        VOICE_TRIAGE_API_URL = "http://127.0.0.1:$TriagePort/triage"
-        VOICE_IMAGE_API_URL = "http://127.0.0.1:$ImagePort/search-images"
-    }
-
 Write-Host "Waiting for local health checks..."
 Wait-ForHttp -Url ("http://127.0.0.1:{0}/health" -f $ChatPort)
 Wait-ForHttp -Url ("http://127.0.0.1:{0}/health" -f $ImagePort)
-Wait-ForHttp -Url ("http://127.0.0.1:{0}/health" -f $VoicePort)
 Wait-ForHttp -Url ("http://127.0.0.1:{0}/docs" -f $TriagePort)
 
 if (-not $SkipServe) {
@@ -210,7 +196,6 @@ if (-not $SkipServe) {
     & $script:TailscaleExe serve --bg --yes --https=$TriageHttpsPort "http://127.0.0.1:$TriagePort"
     & $script:TailscaleExe serve --bg --yes --https=$ChatHttpsPort "http://127.0.0.1:$ChatPort"
     & $script:TailscaleExe serve --bg --yes --https=$ImageHttpsPort "http://127.0.0.1:$ImagePort"
-    & $script:TailscaleExe serve --bg --yes --https=$VoiceHttpsPort "http://127.0.0.1:$VoicePort"
 }
 
 Write-Host ""
@@ -218,11 +203,9 @@ Write-Host "Model stack ready."
 Write-Host ("  Triage API:      {0}/triage" -f $triageUrl)
 Write-Host ("  Chat service:    {0}/chat" -f $chatUrl)
 Write-Host ("  Image retrieval: {0}/search-images" -f $imageUrl)
-Write-Host ("  Voice input:     {0}/health" -f $voiceUrl)
 Write-Host ("  Image files:     {0}/images/<filename>" -f $imageUrl)
 Write-Host ""
 Write-Host "If another machine should use these services, point it at:"
 Write-Host ("  MODEL_URL={0}" -f $triageUrl)
 Write-Host ("  CHAT_SERVICE_URL={0}" -f $chatUrl)
 Write-Host ("  IMAGE_RETRIEVAL_URL={0}" -f $imageUrl)
-Write-Host ("  VITE_VOICE_BASE={0}" -f $voiceUrl)

@@ -190,12 +190,13 @@ The hosted website runs the frontend and HealthLake/Cognito proxy on the VM. The
 - `enttriage.unr.dev` VM:
   - HealthLake proxy on `127.0.0.1:4000`
   - Vite frontend on `0.0.0.0:8080`
+  - Voice input service on `127.0.0.1:8003`
   - Vite proxies `/api` to `127.0.0.1:4000`
+  - Vite proxies `/voice-api` to `127.0.0.1:8003`
 - Tailscale model host:
   - Triage API on Tailscale HTTPS port `8443`
   - Chat service on Tailscale HTTPS port `8444`
   - Image retrieval on Tailscale HTTPS port `8445`
-  - Voice input service on Tailscale HTTPS port `8446`
 
 Frontend env on the VM (`hl-ui/.env.local`):
 
@@ -204,10 +205,10 @@ VITE_PUBLIC_ORIGIN=https://enttriage.unr.dev
 VITE_API_BASE=/api
 VITE_CHAT_BASE=/chat
 VITE_VOICE_BASE=/voice-api
-VITE_DEV_CHAT_TARGET=https:
-VITE_DEV_VOICE_TARGET=
+VITE_DEV_CHAT_TARGET=https://your-gpu-host.your-tailnet.ts.net:8444
+VITE_DEV_VOICE_TARGET=http://127.0.0.1:8003
 VITE_COGNITO_DOMAIN=https://us-east-1jrkokshnh.auth.us-east-1.amazoncognito.com
-VITE_COGNITO_CLIENT_ID=
+VITE_COGNITO_CLIENT_ID=21hhbicb04v7vus5dmlpged4bo
 VITE_COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
 VITE_COGNITO_LOGOUT_URI=https://enttriage.unr.dev/
 ```
@@ -219,9 +220,9 @@ PORT=4000
 NODE_ENV=production
 ALLOWED_ORIGINS=https://enttriage.unr.dev
 COGNITO_REDIRECT_URI=https://enttriage.unr.dev/staff/callback
-MODEL_URL=https:
-CHAT_SERVICE_URL=https:
-IMAGE_RETRIEVAL_URL=https:
+MODEL_URL=https://your-gpu-host.your-tailnet.ts.net:8443
+CHAT_SERVICE_URL=https://your-gpu-host.your-tailnet.ts.net:8444
+IMAGE_RETRIEVAL_URL=https://your-gpu-host.your-tailnet.ts.net:8445
 ```
 
 Start the proxy on the VM:
@@ -229,6 +230,16 @@ Start the proxy on the VM:
 ```powershell
 cd Backend\healthlakeproxy
 npm start
+```
+
+Start the public voice service on the Linux VM:
+
+```bash
+cd Backend
+source .venv/bin/activate
+export VOICE_TRIAGE_API_URL=https://your-gpu-host.your-tailnet.ts.net:8443/triage
+export VOICE_IMAGE_API_URL=https://your-gpu-host.your-tailnet.ts.net:8445/search-images
+python -m uvicorn voice_input.app:app --host 127.0.0.1 --port 8003
 ```
 
 Start the website on the VM:
@@ -239,7 +250,7 @@ $env:PORT="8080"
 npm run dev
 ```
 
-Do not start the triage API, chat service, or image retrieval service on the website VM for the hosted deployment. Those services should be running on the Tailscale model host, and the VM proxy/frontend should point at the Tailscale URLs above.
+Do not start the triage API, chat service, or image retrieval service on the website VM for the hosted deployment. Those services should be running on the Tailscale model host. Voice runs locally on the website VM, and the frontend proxies `/voice-api` to that local service.
 
 Important: add `https://enttriage.unr.dev/staff/callback` and `https://enttriage.unr.dev/` to the Cognito app client's allowed callback/logout URLs or login will fail.
 
@@ -265,8 +276,7 @@ That script:
 - starts the triage API on `127.0.0.1:8000`
 - starts the chat service on `127.0.0.1:8002`
 - starts the image retrieval service on `127.0.0.1:8001`
-- starts the voice input service on `127.0.0.1:8003`
-- publishes them privately to your tailnet with Tailscale Serve on HTTPS ports `8443`, `8444`, `8445`, and `8446`
+- publishes them privately to your tailnet with Tailscale Serve on HTTPS ports `8443`, `8444`, and `8445`
 
 The resulting URLs look like:
 
@@ -274,7 +284,6 @@ The resulting URLs look like:
 https://your-gpu-host.your-tailnet.ts.net:8443/triage
 https://your-gpu-host.your-tailnet.ts.net:8444/chat
 https://your-gpu-host.your-tailnet.ts.net:8445/search-images
-https://your-gpu-host.your-tailnet.ts.net:8446/health
 ```
 
 To consume those services from another machine, set:
@@ -288,8 +297,6 @@ For the hosted public website, keep browser requests on the website origin and p
 - `VITE_CHAT_BASE=/chat`
 - `VITE_VOICE_BASE=/voice-api`
 - `VITE_DEV_CHAT_TARGET=https://your-gpu-host.your-tailnet.ts.net:8444`
-- `VITE_DEV_VOICE_TARGET=https://your-gpu-host.your-tailnet.ts.net:8446`
+- `VITE_DEV_VOICE_TARGET=http://127.0.0.1:8003`
 
-`/voice-api` is configured as a websocket-capable proxy to the Tailscale voice service, so public users on `enttriage.unr.dev` do not need Tailscale installed in their browser/device.
-
-
+`/voice-api` is configured as a websocket-capable proxy to the local voice service on the website VM, so public users on `enttriage.unr.dev` do not need Tailscale installed in their browser/device.
