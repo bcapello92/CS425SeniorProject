@@ -18,6 +18,34 @@ function voiceWebSocketUrl() {
   return url.toString();
 }
 
+function microphoneErrorMessage(error) {
+  const name = error?.name || "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return "Microphone access was blocked. Allow microphone access in your browser and try again.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "No microphone was found on this device.";
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "The microphone is busy or unavailable to the browser.";
+  }
+  if (name === "SecurityError") {
+    return "Microphone access requires a secure HTTPS page.";
+  }
+  return error?.message || "Could not access the microphone.";
+}
+
+async function closeAudioResources(recorder) {
+  recorder.processor?.disconnect();
+  recorder.source?.disconnect();
+  if (recorder.stream) {
+    recorder.stream.getTracks().forEach((track) => track.stop());
+  }
+  if (recorder.audioContext) {
+    await recorder.audioContext.close().catch(() => {});
+  }
+}
+
 function floatTo16BitPCM(float32Array) {
   const pcm = new Int16Array(float32Array.length);
   for (let i = 0; i < float32Array.length; i += 1) {
@@ -52,14 +80,18 @@ export class VoiceStreamRecorder {
   }
 
   async start() {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+    } catch (error) {
+      throw new Error(microphoneErrorMessage(error));
+    }
 
     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     this.source = this.audioContext.createMediaStreamSource(this.stream);
@@ -67,24 +99,42 @@ export class VoiceStreamRecorder {
 
     this.ws = new WebSocket(voiceWebSocketUrl());
 
-    await new Promise((resolve, reject) => {
+    try {
+      await new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Timed out connecting to the voice service."));
+        }, 8000);
+
       const cleanup = () => {
+          window.clearTimeout(timeoutId);
         this.ws?.removeEventListener("open", onOpen);
         this.ws?.removeEventListener("error", onError);
+          this.ws?.removeEventListener("close", onClose);
       };
 
       const onOpen = () => {
         cleanup();
         resolve();
       };
-      const onError = (event) => {
+        const onError = () => {
         cleanup();
-        reject(event);
+          reject(new Error("Could not connect to the voice service."));
       };
+        const onClose = () => {
+          cleanup();
+          reject(new Error("The voice service closed the connection before recording started."));
+        };
 
       this.ws.addEventListener("open", onOpen);
       this.ws.addEventListener("error", onError);
-    });
+        this.ws.addEventListener("close", onClose);
+      });
+    } catch (error) {
+      await closeAudioResources(this);
+      this.ws?.close();
+      throw error;
+    }
 
     this.ws.onmessage = (event) => {
       try {
@@ -135,12 +185,8 @@ export class VoiceStreamRecorder {
       this.ws.send(JSON.stringify({ type: "stop" }));
     }
     this.started = false;
-    this.processor?.disconnect();
-    this.source?.disconnect();
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop());
-    }
-    await this.audioContext?.close();
+    await closeAudioResources(this);
+    this.ws?.close();
   }
 }
 

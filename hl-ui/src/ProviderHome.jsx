@@ -117,9 +117,9 @@ export default function ProviderHome() {
             onClick={() => navigate("/provider/schedule")}
           />
           <ClinicalCard
-            title="File Upload"
-            desc="Upload de-identified files for downstream review and training workflows."
-            meta="Data operations"
+            title="Patient Lookup"
+            desc="Search prior patients and open their uploaded documents."
+            meta="Records review"
             onClick={() => navigate("/provider/upload")}
           />
           <ClinicalCard

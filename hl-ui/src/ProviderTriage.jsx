@@ -634,12 +634,6 @@ function CaseFileModal({
                         ) : null}
                     </div>
                 </CaseSection>
-                <CaseSection title="Model Accuracy">
-                    <div style={styles.accuracyValue}>{formatModelAccuracy(detail?.modelAccuracy)}</div>
-                    <div style={styles.mutedText}>
-                        Stored model metric for this case. Displays "Unavailable" when the backend did not persist one.
-                    </div>
-                </CaseSection>
             </div>
 
             <CaseSection title="Flags">
@@ -914,12 +908,6 @@ function labelForColor(c) {
     return "Routine";
 }
 
-function formatModelAccuracy(value) {
-    if (value === null || value === undefined || value === "") return "Unavailable";
-    if (typeof value === "number") return `${Math.round((value > 0 && value <= 1 ? value * 100 : value))}%`;
-    return String(value);
-}
-
 function isValidAppointmentSlot(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
     const day = date.getDay();
@@ -1086,7 +1074,6 @@ const styles = {
     ratingPill: { display: "inline-flex", alignItems: "center", padding: "6px 12px", borderRadius: 999, color: "#fff", fontWeight: 700 },
     readableText: { margin: 0, lineHeight: 1.6, color: "#0f172a" },
     transcript: { whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, color: "#0f172a", maxHeight: 240, overflow: "auto" },
-    accuracyValue: { fontSize: 28, fontWeight: 800, color: "#0f172a" },
     summaryLabel: { fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#64748b", marginBottom: 6 },
     answerCard: { padding: "10px 12px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" },
     checkboxRow: { display: "flex", alignItems: "center", gap: 6 },

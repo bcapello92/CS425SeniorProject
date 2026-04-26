@@ -1,9 +1,10 @@
 import { CHAT_BASE } from "./config";
 
-const OLLAMA_CHAT_BASE = CHAT_BASE || "http://localhost:8002";
-const CHAT_ENDPOINT = OLLAMA_CHAT_BASE.endsWith("/chat")
-  ? OLLAMA_CHAT_BASE
-  : `${OLLAMA_CHAT_BASE}/chat`;
+const RAW_CHAT_BASE = CHAT_BASE || "http://localhost:8002";
+const OLLAMA_CHAT_BASE = RAW_CHAT_BASE.endsWith("/chat")
+  ? RAW_CHAT_BASE.replace(/\/chat$/, "")
+  : RAW_CHAT_BASE;
+const CHAT_ENDPOINT = `${OLLAMA_CHAT_BASE}/chat`;
 
 export async function sendChat(messages, language = 'en') {
   const controller = new AbortController();
