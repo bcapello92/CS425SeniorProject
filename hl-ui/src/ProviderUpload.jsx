@@ -136,6 +136,28 @@ export default function ProviderUpload() {
     );
   }, [patients, query]);
 
+  const normalizedQuery = query.trim();
+  const hasExactMatch = !!(
+    normalizedQuery &&
+    patients.find((patient) => patient.id.toLowerCase() === normalizedQuery.toLowerCase())
+  );
+
+  function openPatientById(patientId) {
+    const normalizedId = String(patientId || "").trim();
+    if (!normalizedId) return;
+    const existingPatient = patients.find(
+      (patient) => patient.id.toLowerCase() === normalizedId.toLowerCase()
+    );
+    setSelectedPatient(
+      existingPatient || {
+        id: normalizedId,
+        name: normalizedId,
+        birthDate: "",
+        gender: "",
+      }
+    );
+  }
+
   function viewBackendPdf(filename) {
     setFileName(filename);
     setPdfUrl(getPdfUrl(filename));
@@ -165,8 +187,23 @@ export default function ProviderUpload() {
           placeholder="Search by patient ID, name, birth date, or gender"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && normalizedQuery) {
+              openPatientById(normalizedQuery);
+            }
+          }}
           style={searchInput}
         />
+
+        {normalizedQuery && !hasExactMatch ? (
+          <button
+            type="button"
+            onClick={() => openPatientById(normalizedQuery)}
+            style={manualLookupButton}
+          >
+            Open documents for patient ID {normalizedQuery}
+          </button>
+        ) : null}
 
         {patientsLoading ? <div style={message}>Loading patients...</div> : null}
         {patientsError ? <div style={errorBanner}>{patientsError}</div> : null}
@@ -381,6 +418,19 @@ const searchInput = {
   borderRadius: 8,
   border: "1px solid #cbd5e1",
   fontSize: 14,
+};
+
+const manualLookupButton = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 8,
+  border: "1px solid #c7dbff",
+  background: "#e7f3ff",
+  color: "#1d4ed8",
+  cursor: "pointer",
+  fontWeight: 700,
+  fontSize: 13,
+  textAlign: "left",
 };
 
 const patientList = {
