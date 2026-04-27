@@ -17,6 +17,8 @@ const BEGIN_CHAT_BUTTON = /Begin Chat|Comenzar Chat/i;
 const START_ANOTHER_BUTTON = /Start another intake|Iniciar otra consulta/i;
 const THANK_YOU_TEXT =
   /Thank you! Your information has been received by our medical team|Gracias! Su informaci.n ha sido recibida por nuestro equipo m.dico/i;
+const TRIAGE_TRANSITION_TEXT =
+  /send this to the medical team|send this to our medical team|triage info are sent to the medical team|env.e esto al equipo m.dico|la informaci.n de triaje se env.a al equipo m.dico/i;
 
 test.describe.configure({ mode: "parallel" });
 
@@ -84,8 +86,14 @@ async function finishIntakeIfNeeded(page, language) {
   }
 
   const fallback = language === "es" ? "No, eso es todo." : "No, that's all.";
+  const chatWindow = page.locator(".chat-window");
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const chatText = (await chatWindow.textContent().catch(() => "")) || "";
+    if (TRIAGE_TRANSITION_TEXT.test(chatText) || THANK_YOU_TEXT.test(chatText)) {
+      return;
+    }
+
     const suggestion = page.getByRole("button", {
       name: language === "es" ? /^No, eso es todo$/i : /^No, that's all$/i,
     });
@@ -96,10 +104,17 @@ async function finishIntakeIfNeeded(page, language) {
       await sendReply(page, fallback);
     }
 
-    if (await page.getByRole("button", { name: START_ANOTHER_BUTTON }).isVisible().catch(() => false)) {
+    const updatedChatText = (await chatWindow.textContent().catch(() => "")) || "";
+    if (
+      await page.getByRole("button", { name: START_ANOTHER_BUTTON }).isVisible().catch(() => false) ||
+      TRIAGE_TRANSITION_TEXT.test(updatedChatText) ||
+      THANK_YOU_TEXT.test(updatedChatText)
+    ) {
       return;
     }
   }
+
+  throw new Error("Intake did not reach triage submission state.");
 }
 
 for (const script of intakeScripts) {
@@ -115,6 +130,7 @@ for (const script of intakeScripts) {
 
     await finishIntakeIfNeeded(page, script.language);
 
+    await expect(page.locator(".chat-window")).toContainText(TRIAGE_TRANSITION_TEXT);
     await expect(page.getByRole("button", { name: START_ANOTHER_BUTTON })).toBeVisible();
     await expect(page.locator(".chat-window")).toContainText(THANK_YOU_TEXT);
   });
