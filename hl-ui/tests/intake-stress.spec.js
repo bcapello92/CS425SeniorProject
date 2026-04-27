@@ -51,26 +51,28 @@ async function openPatientIntake(page, script, patientId) {
 
 async function sendReply(page, reply) {
   const input = page.locator(".chat-input input[type='text']");
-  const sendButton = page.locator(".chat-input button").last();
-  const beforeCount = await page.locator(".chat-window .message-user, .chat-window .message-bot").count();
+  const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
+  const chatWindow = page.locator(".chat-window");
+  const botMessages = page.locator(".chat-window .message-bot");
+  const previousLastBotText = (await botMessages.last().textContent().catch(() => "")) || "";
 
   await input.fill(reply);
   await sendButton.click();
 
-  await expect.poll(async () => {
-    return page.locator(".chat-window .message-user, .chat-window .message-bot").count();
-  }).toBeGreaterThan(beforeCount);
+  await expect(chatWindow).toContainText(reply);
 
   await page.waitForFunction(
-    ({ beforeCount, thankYouPattern }) => {
-      const messageCount = document.querySelectorAll(
-        ".chat-window .message-user, .chat-window .message-bot"
-      ).length;
-      const text = document.body.innerText || "";
-      return messageCount >= beforeCount + 2 || new RegExp(thankYouPattern, "i").test(text);
+    ({ previousLastBotText, thankYouPattern }) => {
+      const botMessages = Array.from(document.querySelectorAll(".chat-window .message-bot"));
+      const lastBotText = botMessages.at(-1)?.textContent || "";
+      const text = document.querySelector(".chat-window")?.textContent || "";
+      return (
+        lastBotText !== previousLastBotText ||
+        new RegExp(thankYouPattern, "i").test(text)
+      );
     },
     {
-      beforeCount,
+      previousLastBotText,
       thankYouPattern: THANK_YOU_TEXT.source,
     }
   );
