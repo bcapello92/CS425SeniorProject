@@ -543,6 +543,14 @@ function CaseFileModal({
                 <CaseSection title="Patient">
                     <InfoRow label="Patient ID" value={detail?.patient?.id || item.patientId} />
                     <InfoRow label="DOB" value={detail?.patient?.birthDate || "Unavailable"} />
+                    <div style={styles.modalActions}>
+                        <a
+                            href={`/provider/upload?patientId=${encodeURIComponent(detail?.patient?.id || item.patientId || "")}`}
+                            style={styles.inlineLinkButton}
+                        >
+                            View documents
+                        </a>
+                    </div>
                 </CaseSection>
             </div>
 
@@ -1087,6 +1095,19 @@ const styles = {
     image: { width: "100%", height: 132, objectFit: "cover", borderRadius: 8, background: "#f1f5f9" },
     textInput: { flex: 1, minWidth: 220, padding: 8, borderRadius: 8, border: "1px solid #ddd" },
     modalActions: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 },
+    inlineLinkButton: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #c7dbff",
+        background: "#e7f3ff",
+        color: "#1d4ed8",
+        textDecoration: "none",
+        fontWeight: 700,
+        fontSize: 13,
+    },
     weekNav: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14 },
     fieldLabel: { display: "grid", gap: 6 },
     select: { width: "100%", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1", minWidth: 220 },

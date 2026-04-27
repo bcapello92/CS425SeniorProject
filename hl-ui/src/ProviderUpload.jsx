@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -11,6 +12,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 export default function ProviderUpload() {
+  const [searchParams] = useSearchParams();
   const [patients, setPatients] = useState([]);
   const [patientsLoading, setPatientsLoading] = useState(true);
   const [patientsError, setPatientsError] = useState("");
@@ -26,6 +28,7 @@ export default function ProviderUpload() {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.1);
+  const requestedPatientId = searchParams.get("patientId") || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +52,15 @@ export default function ProviderUpload() {
 
         if (!cancelled) {
           setPatients(normalized);
-          if (normalized.length > 0) {
+          const requestedPatient = requestedPatientId
+            ? normalized.find((patient) => patient.id === requestedPatientId)
+            : null;
+          if (requestedPatientId) {
+            setQuery(requestedPatientId);
+          }
+          if (requestedPatient) {
+            setSelectedPatient(requestedPatient);
+          } else if (normalized.length > 0) {
             setSelectedPatient(normalized[0]);
           }
         }
@@ -68,7 +79,7 @@ export default function ProviderUpload() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestedPatientId]);
 
   useEffect(() => {
     let cancelled = false;
