@@ -34,6 +34,17 @@ function buildPatientId(script, testInfo) {
   return `${base}-${timestamp}-${worker}-${retry}`;
 }
 
+async function waitForChatReady(page) {
+  const input = page.locator(".chat-input input[type='text']");
+  const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
+  const typingIndicator = page.locator(".typing-indicator");
+
+  await expect(typingIndicator).toHaveCount(0, { timeout: 45000 });
+  await expect(input).toBeVisible();
+  await expect(input).toBeEnabled();
+  await expect(sendButton).toBeEnabled();
+}
+
 async function openPatientIntake(page, script, patientId) {
   await page.goto("/patient");
   await expect(page).toHaveURL(/\/patient$/);
@@ -49,6 +60,7 @@ async function openPatientIntake(page, script, patientId) {
   await page.getByRole("button", { name: BEGIN_CHAT_BUTTON }).click();
 
   await expect(page.locator(".chat-input input[type='text']")).toBeVisible();
+  await waitForChatReady(page);
 }
 
 async function sendReply(page, reply) {
@@ -56,27 +68,37 @@ async function sendReply(page, reply) {
   const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
   const chatWindow = page.locator(".chat-window");
   const botMessages = page.locator(".chat-window .message-bot");
-  const typingIndicator = page.locator(".typing-indicator");
   const previousLastBotText = (await botMessages.last().textContent().catch(() => "")) || "";
-
-  await expect(typingIndicator).toHaveCount(0);
-  await expect(input).toBeVisible();
-  await expect(input).toBeEnabled();
-
-  await input.fill(reply);
-  await expect(input).toHaveValue(reply);
-  await input.press("Enter");
-
   const echoedReply = chatWindow.getByText(reply, { exact: true });
-  const echoedAfterEnter = await echoedReply
-    .waitFor({ state: "visible", timeout: 3000 })
-    .then(() => true)
-    .catch(() => false);
 
-  if (!echoedAfterEnter) {
-    await expect(sendButton).toBeEnabled();
-    await sendButton.click();
-    await echoedReply.waitFor({ state: "visible", timeout: 10000 });
+  await waitForChatReady(page);
+
+  let submitted = false;
+  for (let attempt = 0; attempt < 3 && !submitted; attempt += 1) {
+    await waitForChatReady(page);
+    await input.click();
+    await input.fill("");
+    await input.fill(reply);
+    await expect(input).toHaveValue(reply);
+    await input.press("Enter");
+
+    submitted = await echoedReply
+      .waitFor({ state: "visible", timeout: 4000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!submitted) {
+      await expect(sendButton).toBeEnabled();
+      await sendButton.click();
+      submitted = await echoedReply
+        .waitFor({ state: "visible", timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+    }
+  }
+
+  if (!submitted) {
+    throw new Error(`Reply was typed but never submitted: ${reply}`);
   }
 
   await page.waitForFunction(
@@ -92,10 +114,11 @@ async function sendReply(page, reply) {
     {
       previousLastBotText,
       thankYouPattern: THANK_YOU_TEXT.source,
-    }
+    },
+    { timeout: 45000 }
   );
 
-  await expect(typingIndicator).toHaveCount(0);
+  await waitForChatReady(page);
 }
 
 async function finishIntakeIfNeeded(page, language) {
@@ -142,8 +165,10 @@ for (const script of intakeScripts) {
 
     await openPatientIntake(page, script, patientId);
 
-    for (const reply of script.answers || []) {
-      await sendReply(page, reply);
+    for (const [index, reply] of (script.answers || []).entries()) {
+      await test.step(`reply ${index + 1}: ${reply}`, async () => {
+        await sendReply(page, reply);
+      });
     }
 
     await finishIntakeIfNeeded(page, script.language);

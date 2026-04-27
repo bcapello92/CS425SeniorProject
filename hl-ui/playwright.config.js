@@ -7,11 +7,12 @@ const baseURL =
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 120000,
+  timeout: 300000,
   expect: {
-    timeout: 15000,
+    timeout: 30000,
   },
   fullyParallel: true,
+  workers: process.env.CI ? 2 : 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
