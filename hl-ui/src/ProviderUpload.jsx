@@ -375,12 +375,14 @@ function toolButton(disabled) {
 }
 
 const page = {
-  minHeight: "calc(100vh - 120px)",
+  height: "calc(100vh - 96px)",
   display: "grid",
   gridTemplateColumns: "320px minmax(0, 1fr)",
   gap: 16,
   padding: 16,
   background: "#f6f8fb",
+  overflow: "auto",
+  alignItems: "start",
 };
 
 const sidebar = {
@@ -392,6 +394,8 @@ const sidebar = {
   border: "1px solid #e2e8f0",
   background: "#fff",
   minHeight: 0,
+  maxHeight: "100%",
+  overflow: "hidden",
 };
 
 const headerBlock = {
@@ -469,6 +473,8 @@ const mainPanel = {
   flexDirection: "column",
   gap: 12,
   minWidth: 0,
+  minHeight: 0,
+  maxHeight: "100%",
 };
 
 const detailHeader = {
@@ -502,6 +508,7 @@ const docPillRow = {
   borderRadius: 12,
   border: "1px solid #e2e8f0",
   background: "#fff",
+  overflowY: "auto",
 };
 
 const docPill = {
@@ -523,6 +530,7 @@ const viewerWrap = {
   flexDirection: "column",
   flex: 1,
   minHeight: 0,
+  maxHeight: "100%",
   borderRadius: 12,
   border: "1px solid #e2e8f0",
   background: "#fff",
