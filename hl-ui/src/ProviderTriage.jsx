@@ -1,8 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { triageClient } from "./triageClient";
 import { useAuth } from "./useAuth.jsx";
+import { translateTranscript } from "./ollamaChatClient";
 
 const EMPTY_GROUPS = { red: [], orange: [], blue: [] };
+
+function looksLikeSpanish(text) {
+    const value = String(text || "").toLowerCase();
+    if (!value.trim()) return false;
+    return /[áéíóúñ¿¡]/i.test(value) ||
+        /\b(el|la|los|las|un|una|con|para|por|del|que|dolor|fiebre|paciente|síntomas|garganta|oído|oreja|nariz)\b/i.test(value);
+}
+
+function useTranslatedDisplayText(text) {
+    const source = String(text || "").trim();
+    const [displayText, setDisplayText] = useState(source);
+
+    useEffect(() => {
+        let cancelled = false;
+        setDisplayText(source);
+
+        if (!source || !looksLikeSpanish(source)) {
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        (async () => {
+            try {
+                const translated = await translateTranscript(source);
+                if (!cancelled && translated && translated.trim()) {
+                    setDisplayText(translated.trim());
+                }
+            } catch {
+                // Keep the original text if translation is unavailable.
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [source]);
+
+    return displayText || source;
+}
 
 export default function ProviderTriage() {
     const { me } = useAuth();
@@ -528,6 +569,7 @@ function CaseFileModal({
 }) {
     const flags = detail?.flags || {};
     const color = detail?.color || item?.color || "blue";
+    const displayRationale = useTranslatedDisplayText(detail?.rationale || "");
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
@@ -623,7 +665,7 @@ function CaseFileModal({
             </CaseSection>
 
             <CaseSection title="Triage Reasoning">
-                <div style={styles.readableText}>{detail?.rationale || "No rationale provided for this case."}</div>
+                <div style={styles.readableText}>{displayRationale || "No rationale provided for this case."}</div>
             </CaseSection>
 
             <div style={styles.midGrid}>
