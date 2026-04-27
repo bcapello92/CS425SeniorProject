@@ -5,11 +5,9 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { API_BASE } from "./config.js";
 import { getPdfUrl, listPatientPdfs } from "./ollamaChatClient";
+import pdfWorkerSrc from "react-pdf/node_modules/pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 export default function ProviderUpload() {
   const [searchParams] = useSearchParams();
