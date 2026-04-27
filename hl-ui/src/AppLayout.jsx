@@ -69,8 +69,7 @@ const appShell = { minHeight: "100vh", background: "#f6f8fb" };
 const landingShell = {
   minHeight: "100vh",
   overflowY: "auto",
-  background:
-    "radial-gradient(1200px 600px at 20% 0%, rgba(99, 102, 241, 0.25), transparent 60%), radial-gradient(900px 500px at 80% 10%, rgba(16, 185, 129, 0.18), transparent 60%), #0b1020",
+  background: "#f6f8fb",
 };
 
 const header = {
@@ -88,7 +87,7 @@ const landingHeader = {
   alignItems: "center",
   maxWidth: 980,
   margin: "0 auto",
-  padding: "24px 18px 0",
+  padding: "16px 18px 0",
 };
 
 const left = { display: "flex", gap: 10 };
@@ -108,15 +107,14 @@ const linkBtn = {
 };
 
 const landingLinkBtn = {
-  padding: "10px 14px",
-  borderRadius: 999,
-  border: "1px solid rgba(255, 255, 255, 0.12)",
-  background: "rgba(255, 255, 255, 0.06)",
-  color: "rgba(255, 255, 255, 0.92)",
+  padding: "8px 12px",
+  borderRadius: 8,
+  border: "1px solid #dbe4f0",
+  background: "#fff",
+  color: "#0f172a",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 600,
   fontSize: 13,
-  letterSpacing: "0.04em",
 };
 
 const primaryBtn = {

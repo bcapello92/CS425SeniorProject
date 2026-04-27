@@ -1,18 +1,17 @@
-﻿:root {
-  --landing-bg: #0b1020;
-  --landing-panel: rgba(255, 255, 255, 0.06);
-  --landing-panel2: rgba(255, 255, 255, 0.09);
-  --landing-text: rgba(255, 255, 255, 0.92);
-  --landing-muted: rgba(255, 255, 255, 0.72);
-  --landing-line: rgba(255, 255, 255, 0.12);
+:root {
+  --landing-bg: #f6f8fb;
+  --landing-panel: #ffffff;
+  --landing-panel2: #f7fbff;
+  --landing-text: #0f172a;
+  --landing-muted: #64748b;
+  --landing-line: #e2e8f0;
+  --landing-accent: #2563eb;
+  --landing-accent-soft: #eff6ff;
 }
 
 .landingShell {
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 20% 0%, rgba(99, 102, 241, 0.25), transparent 60%),
-    radial-gradient(900px 500px at 80% 10%, rgba(16, 185, 129, 0.18), transparent 60%),
-    var(--landing-bg);
+  background: #f6f8fb;
 }
 
 .landingPage {
@@ -26,26 +25,28 @@
 .landingHero {
   border: 1px solid var(--landing-line);
   background: linear-gradient(180deg, var(--landing-panel2), var(--landing-panel));
-  border-radius: 18px;
+  border-radius: 12px;
   padding: 28px 22px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
 }
 
 .landingBadge {
   display: inline-block;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid var(--landing-line);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--landing-muted);
+  border: 1px solid #dbe5f4;
+  background: var(--landing-accent-soft);
+  color: #1d4ed8;
   font-size: 13px;
+  font-weight: 700;
 }
 
 .landingTitle {
   margin: 14px 0 6px;
   font-size: 34px;
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+  color: var(--landing-text);
 }
 
 .landingSubtitle {
@@ -63,8 +64,8 @@
 .landingMetaCard {
   grid-column: span 12;
   border: 1px solid var(--landing-line);
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
+  background: #ffffff;
+  border-radius: 8px;
   padding: 12px 14px;
 }
 
@@ -79,11 +80,13 @@
   color: var(--landing-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  font-weight: 700;
 }
 
 .landingMetaValue {
   margin-top: 6px;
   font-size: 15px;
+  color: var(--landing-text);
 }
 
 .landingContent {
@@ -93,19 +96,20 @@
 .landingSectionTitle {
   margin: 24px 4px 10px;
   font-size: 18px;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--landing-text);
 }
 
 .landingCard {
   border: 1px solid var(--landing-line);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 18px;
-  padding: 18px 18px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
 }
 
 .landingParagraph {
   margin: 0 0 14px;
-  color: rgba(255, 255, 255, 0.86);
+  color: #334155;
 }
 
 .landingParagraph:last-child {
@@ -115,16 +119,16 @@
 .landingRefHeading {
   margin: 0 0 10px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--landing-text);
 }
 
 .landingReference {
   margin: 0 0 14px;
-  color: rgba(255, 255, 255, 0.86);
+  color: #334155;
 }
 
 .landingReference a {
-  color: #a5b4fc;
+  color: var(--landing-accent);
 }
 
 .landingFooter {
