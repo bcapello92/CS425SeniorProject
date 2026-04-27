@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
         "/chat": {
           target: chatTarget,
           changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/chat/, ""),
         },
         "/voice-api": {
           target: voiceTarget,
