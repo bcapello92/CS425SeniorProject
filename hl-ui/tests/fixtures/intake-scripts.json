@@ -1,0 +1,95 @@
+[
+  {
+    "name": "allergy-routine",
+    "patientId": "demo-allergy",
+    "language": "en",
+    "answers": [
+      "Nose and sinuses.",
+      "I have a runny nose, sneezing, itchy eyes, and congestion from seasonal allergies.",
+      "It started three days ago after being outside all weekend.",
+      "The drainage is clear and the congestion is mild.",
+      "No fever, no trouble breathing, and no facial swelling.",
+      "Antihistamines help some and it is not getting worse.",
+      "I have not needed antibiotics or urgent care for this.",
+      "No prior imaging or lab work for this episode.",
+      "No, that's all."
+    ]
+  },
+  {
+    "name": "ear-drainage-semi-routine",
+    "patientId": "demo-ear-drainage",
+    "language": "en",
+    "answers": [
+      "Ear.",
+      "My right ear has been draining and hurts when I lie on that side.",
+      "It started about four days ago.",
+      "The pain is moderate and my hearing feels muffled.",
+      "No fever, no dizziness, and no facial weakness.",
+      "Ibuprofen helps a little but the drainage keeps coming back.",
+      "I used over the counter ear drops yesterday.",
+      "No prior imaging or hearing tests for this.",
+      "No, that's all."
+    ]
+  },
+  {
+    "name": "sinus-fever-semi-routine",
+    "patientId": "demo-sinus-fever",
+    "language": "en",
+    "answers": [
+      "Nose and sinuses.",
+      "I have worsening sinus pressure, thick drainage, headache, and a low fever.",
+      "It has been going on for eight days.",
+      "The pressure is around a six out of ten and worse when I lean forward.",
+      "No vision changes and no trouble breathing.",
+      "Decongestants are not helping much anymore.",
+      "I have had similar sinus infections before.",
+      "No scans for this episode.",
+      "No, that's all."
+    ]
+  },
+  {
+    "name": "throat-emergency",
+    "patientId": "demo-throat-red",
+    "language": "en",
+    "answers": [
+      "Throat and neck.",
+      "I have a severe sore throat, high fever, stiff neck, and it hurts to swallow anything.",
+      "It started last night and got worse quickly this morning.",
+      "The pain is severe and I can barely drink water.",
+      "No trouble breathing yet but my neck feels very stiff.",
+      "I have not taken anything except Tylenol once.",
+      "No prior tests for this episode.",
+      "No, that's all."
+    ]
+  },
+  {
+    "name": "hearing-routine",
+    "patientId": "demo-hearing-routine",
+    "language": "en",
+    "answers": [
+      "Ear.",
+      "My hearing has been gradually muffled in my left ear for a few months.",
+      "It is chronic and not suddenly worse.",
+      "There is no pain, no drainage, and no fever.",
+      "Background noise makes it harder to hear conversations.",
+      "Nothing urgent happened before it started.",
+      "I have not had a recent hearing test.",
+      "No, that's all."
+    ]
+  },
+  {
+    "name": "spanish-ear-case",
+    "patientId": "demo-es-oreja",
+    "language": "es",
+    "answers": [
+      "Oreja.",
+      "Tengo dolor de oido izquierdo, presion y un poco de zumbido.",
+      "Comenzo hace dos dias.",
+      "El dolor es moderado y empeora por la noche.",
+      "No tengo fiebre, no tengo mareo y no tengo dificultad para respirar.",
+      "Ibuprofeno ayuda un poco.",
+      "No me han hecho estudios para este problema.",
+      "No, eso es todo."
+    ]
+  }
+]

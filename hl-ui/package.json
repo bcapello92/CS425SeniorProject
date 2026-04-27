@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "stress:intakes": "playwright test tests/intake-stress.spec.js",
+    "stress:intakes:headed": "playwright test tests/intake-stress.spec.js --headed"
   },
   "dependencies": {
     "pdfjs-dist": "^5.6.205",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.13",
