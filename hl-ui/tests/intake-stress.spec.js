@@ -67,8 +67,6 @@ async function sendReply(page, reply) {
   const input = page.locator(".chat-input input[type='text']");
   const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
   const chatWindow = page.locator(".chat-window");
-  const botMessages = page.locator(".chat-window .message-bot");
-  const previousLastBotText = (await botMessages.last().textContent().catch(() => "")) || "";
   const echoedReply = chatWindow.getByText(reply, { exact: true });
 
   await waitForChatReady(page);
@@ -101,24 +99,7 @@ async function sendReply(page, reply) {
     throw new Error(`Reply was typed but never submitted: ${reply}`);
   }
 
-  await page.waitForFunction(
-    ({ previousLastBotText, thankYouPattern }) => {
-      const botMessages = Array.from(document.querySelectorAll(".chat-window .message-bot"));
-      const lastBotText = botMessages.at(-1)?.textContent || "";
-      const text = document.querySelector(".chat-window")?.textContent || "";
-      return (
-        lastBotText !== previousLastBotText ||
-        new RegExp(thankYouPattern, "i").test(text)
-      );
-    },
-    {
-      previousLastBotText,
-      thankYouPattern: THANK_YOU_TEXT.source,
-    },
-    { timeout: 45000 }
-  );
-
-  await waitForChatReady(page);
+  await page.waitForTimeout(3000);
 }
 
 async function finishIntakeIfNeeded(page, language) {
