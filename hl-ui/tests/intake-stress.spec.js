@@ -60,11 +60,24 @@ async function sendReply(page, reply) {
   const previousLastBotText = (await botMessages.last().textContent().catch(() => "")) || "";
 
   await expect(typingIndicator).toHaveCount(0);
+  await expect(input).toBeVisible();
+  await expect(input).toBeEnabled();
 
   await input.fill(reply);
-  await sendButton.click();
+  await expect(input).toHaveValue(reply);
+  await input.press("Enter");
 
-  await expect(chatWindow).toContainText(reply);
+  const echoedReply = chatWindow.getByText(reply, { exact: true });
+  const echoedAfterEnter = await echoedReply
+    .waitFor({ state: "visible", timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!echoedAfterEnter) {
+    await expect(sendButton).toBeEnabled();
+    await sendButton.click();
+    await echoedReply.waitFor({ state: "visible", timeout: 10000 });
+  }
 
   await page.waitForFunction(
     ({ previousLastBotText, thankYouPattern }) => {
