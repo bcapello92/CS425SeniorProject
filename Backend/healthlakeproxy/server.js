@@ -283,12 +283,136 @@ async function fetchPatientTriageObservations(patientId) {
   return [];
 }
 
+function readCodeableConceptLabel(concept) {
+  if (!concept) return null;
+  const text = String(concept?.text || "").trim();
+  if (text) return text;
+
+  const coding = Array.isArray(concept?.coding) ? concept.coding : [];
+  for (const entry of coding) {
+    const display = String(entry?.display || "").trim();
+    if (display) return display;
+    const code = String(entry?.code || "").trim();
+    if (code) return code;
+  }
+
+  return null;
+}
+
+function collectStringValues(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap(collectStringValues).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  if (typeof value === "object") {
+    const direct = [
+      value.text,
+      value.display,
+      value.value,
+      value.description,
+      value.name,
+      value.title,
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    if (direct.length) return direct;
+  }
+  return [];
+}
+
+function dedupeStrings(values) {
+  return [...new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+async function fetchBundleResources(path, patientId, extraQueries = []) {
+  const encodedPatientId = encodeURIComponent(patientId);
+  const queries = [
+    `subject=Patient/${encodedPatientId}&_count=50`,
+    `patient=${encodedPatientId}&_count=50`,
+    ...extraQueries,
+  ];
+
+  let lastError = null;
+  for (const query of queries) {
+    try {
+      const bundle = await signedFetch({ path, query });
+      const resources = (bundle?.entry || [])
+        .map((entry) => entry?.resource)
+        .filter(Boolean);
+      if (resources.length || !query.startsWith("subject=")) {
+        return resources;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      `[HL WARN] ${path} history lookup failed`,
+      lastError.status || "",
+      lastError.message || ""
+    );
+  }
+  return [];
+}
+
+async function fetchClinicalHistory(patientId) {
+  const [conditions, medications, allergies] = await Promise.all([
+    fetchBundleResources("/Condition", patientId),
+    fetchBundleResources("/MedicationRequest", patientId),
+    fetchBundleResources("/AllergyIntolerance", patientId),
+  ]);
+
+  const conditionLabels = dedupeStrings(
+    conditions.flatMap((item) =>
+      collectStringValues([
+        readCodeableConceptLabel(item?.code),
+        item?.clinicalStatus?.text,
+      ])
+    )
+  );
+
+  const medicationLabels = dedupeStrings(
+    medications.flatMap((item) =>
+      collectStringValues([
+        readCodeableConceptLabel(item?.medicationCodeableConcept),
+        item?.medicationReference?.display,
+      ])
+    )
+  );
+
+  const allergyLabels = dedupeStrings(
+    allergies.flatMap((item) =>
+      collectStringValues([
+        readCodeableConceptLabel(item?.code),
+        item?.criticality,
+        (item?.reaction || []).map((reaction) => readCodeableConceptLabel(reaction?.substance)),
+      ])
+    )
+  );
+
+  return {
+    conditions: conditionLabels,
+    medications: medicationLabels,
+    allergies: allergyLabels,
+  };
+}
+
 async function getPatientHistory(patientId, { excludeObservationId = null } = {}) {
   const normalized = String(patientId || "").trim();
   if (!normalized) return null;
 
   const mock = getMockPatientHistory(normalized);
-  const observations = (await fetchPatientTriageObservations(normalized))
+  const [observations, clinicalHistory] = await Promise.all([
+    fetchPatientTriageObservations(normalized),
+    fetchClinicalHistory(normalized),
+  ]);
+  const mappedObservations = observations
     .filter((obs) => !excludeObservationId || obs?.id !== excludeObservationId)
     .map((obs) => {
       const flags = readTriageFlagsFromObservation(obs);
@@ -303,26 +427,53 @@ async function getPatientHistory(patientId, { excludeObservationId = null } = {}
     })
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
-  const scheduled = observations
+  const scheduled = mappedObservations
     .filter((item) => item.appointmentAt)
     .sort(
       (a, b) =>
         new Date(b.appointmentAt || 0).getTime() -
         new Date(a.appointmentAt || 0).getTime()
     );
-  const lastTriage = observations.find((item) => item.rationale || item.color) || null;
+  const lastTriage = mappedObservations.find((item) => item.rationale || item.color) || null;
+  const mergedConditions = dedupeStrings([
+    ...(mock?.conditions || []),
+    ...(clinicalHistory?.conditions || []),
+  ]);
+  const mergedMedications = dedupeStrings([
+    ...(mock?.medications || []),
+    ...(clinicalHistory?.medications || []),
+  ]);
+  const mergedAllergies = dedupeStrings([
+    ...(mock?.allergies || []),
+    ...(clinicalHistory?.allergies || []),
+  ]);
+  const sourceParts = [];
+  if (mappedObservations.length) sourceParts.push("healthlake-triage");
+  if (mergedConditions.length || mergedMedications.length || mergedAllergies.length) {
+    sourceParts.push("healthlake-clinical");
+  }
+  if (mock?.hasHistory) sourceParts.push("mock");
 
   return {
     ...mock,
     patientId: normalized,
-    source: observations.length ? "healthlake" : "mock",
-    hasHistory: Boolean(mock?.hasHistory || observations.length),
+    source: sourceParts.join("+") || "mock",
+    hasHistory: Boolean(
+      mock?.hasHistory ||
+        mappedObservations.length ||
+        mergedConditions.length ||
+        mergedMedications.length ||
+        mergedAllergies.length
+    ),
     lastVisit: scheduled[0]?.appointmentAt || mock?.lastVisit || null,
     lastScheduledAt: scheduled[0]?.appointmentAt || null,
     lastTriageDate: lastTriage?.date || null,
     lastTriageColor: lastTriage?.color || null,
     lastTriageRationale: lastTriage?.rationale || null,
-    triageHistory: observations.slice(0, 5),
+    triageHistory: mappedObservations.slice(0, 5),
+    conditions: mergedConditions,
+    medications: mergedMedications,
+    allergies: mergedAllergies,
   };
 }
 
