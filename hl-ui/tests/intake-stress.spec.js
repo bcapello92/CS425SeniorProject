@@ -56,7 +56,10 @@ async function sendReply(page, reply) {
   const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
   const chatWindow = page.locator(".chat-window");
   const botMessages = page.locator(".chat-window .message-bot");
+  const typingIndicator = page.locator(".typing-indicator");
   const previousLastBotText = (await botMessages.last().textContent().catch(() => "")) || "";
+
+  await expect(typingIndicator).toHaveCount(0);
 
   await input.fill(reply);
   await sendButton.click();
@@ -78,6 +81,8 @@ async function sendReply(page, reply) {
       thankYouPattern: THANK_YOU_TEXT.source,
     }
   );
+
+  await expect(typingIndicator).toHaveCount(0);
 }
 
 async function finishIntakeIfNeeded(page, language) {
