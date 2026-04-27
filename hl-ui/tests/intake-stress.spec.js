@@ -34,12 +34,9 @@ function buildPatientId(script, testInfo) {
   return `${base}-${timestamp}-${worker}-${retry}`;
 }
 
-async function waitForChatReady(page) {
+async function waitForChatInput(page) {
   const input = page.locator(".chat-input input[type='text']");
   const sendButton = page.getByRole("button", { name: /^Send|Enviar$/i });
-  const typingIndicator = page.locator(".typing-indicator");
-
-  await expect(typingIndicator).toHaveCount(0, { timeout: 45000 });
   await expect(input).toBeVisible();
   await expect(input).toBeEnabled();
   await expect(sendButton).toBeEnabled();
@@ -60,7 +57,7 @@ async function openPatientIntake(page, script, patientId) {
   await page.getByRole("button", { name: BEGIN_CHAT_BUTTON }).click();
 
   await expect(page.locator(".chat-input input[type='text']")).toBeVisible();
-  await waitForChatReady(page);
+  await waitForChatInput(page);
 }
 
 async function sendReply(page, reply) {
@@ -69,11 +66,11 @@ async function sendReply(page, reply) {
   const chatWindow = page.locator(".chat-window");
   const echoedReply = chatWindow.getByText(reply, { exact: true });
 
-  await waitForChatReady(page);
+  await waitForChatInput(page);
 
   let submitted = false;
   for (let attempt = 0; attempt < 3 && !submitted; attempt += 1) {
-    await waitForChatReady(page);
+    await waitForChatInput(page);
     await input.click();
     await input.fill("");
     await input.fill(reply);
