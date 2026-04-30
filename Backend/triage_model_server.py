@@ -155,6 +155,20 @@ def build_grounding_text(payload: IntakePayload) -> str:
     return "\n".join(parts).lower()
 
 
+def build_patient_symptom_text(payload: IntakePayload) -> str:
+    parts = []
+    for a in payload.answers:
+        a_text = _scrub_text_quick(a.get("answer", ""))
+        if a_text:
+            parts.append(a_text)
+
+    patient_only = extract_patient_only_transcript(payload.transcript or "")
+    if patient_only:
+        parts.append(patient_only)
+
+    return "\n".join(parts).lower()
+
+
 RATIONALE_CHECKS = [
     ("fever", ("fever", "temperature", "febrile")),
     ("throat pain", ("throat pain", "sore throat", "throat", "pain swallowing", "swallowing")),
@@ -181,6 +195,30 @@ def rationale_is_grounded(rationale: str | None, payload: IntakePayload) -> bool
                 return False
 
     return True
+
+
+def high_risk_override(payload: IntakePayload) -> tuple[str, str] | None:
+    grounded_text = build_patient_symptom_text(payload)
+    if not grounded_text.strip():
+        return None
+
+    def has_any(*phrases: str) -> bool:
+        return any(phrase in grounded_text for phrase in phrases)
+
+    has_fever = has_any("fever", "high fever", "febrile")
+    has_stiff_neck = has_any("stiff neck", "neck stiffness")
+    has_severe_throat = has_any("severe sore throat", "very sore throat")
+
+    if has_fever and has_stiff_neck:
+        return ("red", "High-risk override: fever with neck stiffness requires emergency evaluation.")
+
+    if has_fever and has_stiff_neck and has_severe_throat:
+        return ("red", "High-risk override: fever, neck stiffness, and severe throat pain require emergency evaluation.")
+
+    if has_stiff_neck and has_severe_throat:
+        return ("red", "High-risk override: severe throat pain with neck stiffness requires emergency evaluation.")
+
+    return None
 
 
 def build_prompt(payload: IntakePayload):
@@ -216,6 +254,8 @@ Output rules (must follow exactly):
 - "color" must be exactly one of: "red", "orange", "blue"
 - "rationale" must be ONE sentence, max 20 words.
 - The rationale must mention only symptoms or risk factors explicitly present in the provided case.
+- Choose orange only when the case clearly needs prompt evaluation based on explicit symptoms.
+- If symptoms are stable, mild, chronic, or without red-flag features, prefer blue.
 - Do not copy stock phrases or example wording.
 """.strip()
 
@@ -405,7 +445,12 @@ def triage(payload: IntakePayload):
     if rationale and not rationale_is_grounded(rationale, payload):
         print("RATIONALE REJECTED AS UNGROUNDED:", rationale)
         rationale = None
-        color = None
+
+    if not color and scored_label in ("red", "orange", "blue"):
+        color = scored_label
+        if not rationale:
+            rationale = f"Scored-label fallback selected {scored_label} based on transcript and answers."
+        print("USING SCORED LABEL:", {"color": color, "confidence": scored_confidence})
 
     if not color:
         used_fallback = True

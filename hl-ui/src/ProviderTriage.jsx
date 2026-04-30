@@ -53,6 +53,7 @@ export default function ProviderTriage() {
     const [err, setErr] = useState(null);
     const [selectedRiskId, setSelectedRiskId] = useState(null);
     const [detail, setDetail] = useState({});
+    const [historyState, setHistoryState] = useState({});
     const [flagUI, setFlagUI] = useState({});
     const [flagModal, setFlagModal] = useState(null);
     const [overrideUI, setOverrideUI] = useState({});
@@ -65,6 +66,7 @@ export default function ProviderTriage() {
     const selectedItem = items.find((item) => item.riskId === selectedRiskId) || null;
     const selectedState = selectedRiskId ? detail[selectedRiskId] : null;
     const selectedDetail = selectedState?.data || null;
+    const selectedHistoryState = selectedRiskId ? historyState[selectedRiskId] : null;
     const selectedImages = selectedRiskId ? imageResults[selectedRiskId] : null;
     const selectedOverride = selectedRiskId ? overrideUI[selectedRiskId] : null;
 
@@ -121,15 +123,11 @@ export default function ProviderTriage() {
 
     async function ensureCaseLoaded(riskId) {
         if (!riskId) return;
-        if (detail[riskId]) {
-            if (!imageResults[riskId]) loadRelatedImages(riskId, detail[riskId]?.data?.answers || []);
-            return;
-        }
+        if (detail[riskId]) return;
         setDetail((prev) => ({ ...prev, [riskId]: { loading: true, error: null, data: null } }));
         try {
             const json = await triageClient.getDetail(riskId);
             setDetail((prev) => ({ ...prev, [riskId]: { loading: false, error: null, data: json } }));
-            loadRelatedImages(riskId, json?.answers || []);
         } catch (e) {
             setDetail((prev) => ({
                 ...prev,
@@ -137,6 +135,33 @@ export default function ProviderTriage() {
             }));
         }
     }
+
+    async function ensurePatientHistoryLoaded(riskId, patientId) {
+        if (!riskId || !patientId) return;
+        if (historyState[riskId]?.loading || historyState[riskId]?.data) return;
+        setHistoryState((prev) => ({
+            ...prev,
+            [riskId]: { loading: true, error: null, data: null },
+        }));
+        try {
+            const json = await triageClient.getPatientHistory(patientId);
+            setHistoryState((prev) => ({
+                ...prev,
+                [riskId]: { loading: false, error: null, data: json },
+            }));
+        } catch (e) {
+            setHistoryState((prev) => ({
+                ...prev,
+                [riskId]: { loading: false, error: e?.message || "Failed to load history", data: null },
+            }));
+        }
+    }
+
+    useEffect(() => {
+        if (!selectedRiskId || !selectedDetail?.patient?.id) return;
+        ensurePatientHistoryLoaded(selectedRiskId, selectedDetail.patient.id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedRiskId, selectedDetail?.patient?.id]);
 
     function openCase(item) {
         setSelectedRiskId(item.riskId);
@@ -422,12 +447,14 @@ export default function ProviderTriage() {
                         <CaseFileModal
                             item={selectedItem}
                             detail={selectedDetail}
+                            patientHistoryState={selectedHistoryState}
                             imageState={selectedImages}
                             override={selectedOverride}
                             canOverride={canOverride}
                             onOpenContact={openContactModal}
                             onOpenSchedule={openScheduleModal}
                             onSetFlag={setFlag}
+                            onLoadRelatedImages={loadRelatedImages}
                             onOpenOverride={openOverrideEditor}
                             onPatchOverride={(patch) =>
                                 setOverrideUI((prev) => ({
@@ -557,12 +584,14 @@ export default function ProviderTriage() {
 function CaseFileModal({
     item,
     detail,
+    patientHistoryState,
     imageState,
     override,
     canOverride,
     onOpenContact,
     onOpenSchedule,
     onSetFlag,
+    onLoadRelatedImages,
     onOpenOverride,
     onPatchOverride,
     onSaveOverride,
@@ -570,9 +599,45 @@ function CaseFileModal({
     const flags = detail?.flags || {};
     const color = detail?.color || item?.color || "blue";
     const displayRationale = useTranslatedDisplayText(detail?.rationale || "");
+    const [transcriptOpen, setTranscriptOpen] = useState(false);
+    const patientName = detail?.patient?.name || item?.patientName || "Unknown patient";
+    const patientId = detail?.patient?.id || item?.patientId || "Unavailable";
+    const patientPhone = detail?.patient?.phone || null;
+    const patientEmail = detail?.patient?.email || null;
+    const contactSummary = [patientPhone, patientEmail].filter(Boolean);
+    const patientHistory = patientHistoryState?.data || null;
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
+            <div style={styles.caseStickyBar}>
+                <div style={{ display: "grid", gap: 4 }}>
+                    <div style={styles.caseStickyName}>{patientName}</div>
+                    <div style={styles.caseStickyMeta}>
+                        <span>{patientId}</span>
+                        <span>•</span>
+                        <span>{labelForColor(color)}</span>
+                    </div>
+                </div>
+                <div style={styles.caseStickyContactWrap}>
+                    {contactSummary.length ? (
+                        <>
+                            {patientPhone ? (
+                                <a href={`tel:${patientPhone}`} style={styles.contactChip}>
+                                    Call {patientPhone}
+                                </a>
+                            ) : null}
+                            {patientEmail ? (
+                                <a href={`mailto:${patientEmail}`} style={styles.contactChip}>
+                                    Email {patientEmail}
+                                </a>
+                            ) : null}
+                        </>
+                    ) : (
+                        <span style={styles.caseStickyMissing}>No contact info on file</span>
+                    )}
+                </div>
+            </div>
+
             <div style={styles.topGrid}>
                 <CaseSection title="Triage Rating">
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -583,11 +648,13 @@ function CaseFileModal({
                     </div>
                 </CaseSection>
                 <CaseSection title="Patient">
-                    <InfoRow label="Patient ID" value={detail?.patient?.id || item.patientId} />
+                    <InfoRow label="Patient ID" value={patientId} />
                     <InfoRow label="DOB" value={detail?.patient?.birthDate || "Unavailable"} />
+                    <InfoRow label="Phone" value={patientPhone || "Unavailable"} />
+                    <InfoRow label="Email" value={patientEmail || "Unavailable"} />
                     <div style={styles.modalActions}>
                         <a
-                            href={`/provider/upload?patientId=${encodeURIComponent(detail?.patient?.id || item.patientId || "")}`}
+                            href={`/provider/upload?patientId=${encodeURIComponent(patientId)}`}
                             style={styles.inlineLinkButton}
                         >
                             View documents
@@ -597,48 +664,52 @@ function CaseFileModal({
             </div>
 
             <CaseSection title="Patient History">
-                {detail?.patientHistory?.hasHistory ? (
+                {patientHistoryState?.loading ? (
+                    <div style={styles.mutedText}>Loading patient history...</div>
+                ) : patientHistoryState?.error ? (
+                    <div style={{ color: "crimson" }}>{patientHistoryState.error}</div>
+                ) : patientHistory?.hasHistory ? (
                     <div style={{ display: "grid", gap: 8 }}>
                         <InfoRow
                             label="Last scheduled"
                             value={
-                                detail?.patientHistory?.lastScheduledAt
-                                    ? new Date(detail.patientHistory.lastScheduledAt).toLocaleString()
-                                    : detail?.patientHistory?.lastVisit || "Unavailable"
+                                patientHistory?.lastScheduledAt
+                                    ? new Date(patientHistory.lastScheduledAt).toLocaleString()
+                                    : patientHistory?.lastVisit || "Unavailable"
                             }
                         />
                         <InfoRow
                             label="Last triage"
                             value={[
-                                detail?.patientHistory?.lastTriageColor
-                                    ? labelForColor(detail.patientHistory.lastTriageColor)
+                                patientHistory?.lastTriageColor
+                                    ? labelForColor(patientHistory.lastTriageColor)
                                     : null,
-                                detail?.patientHistory?.lastTriageDate
-                                    ? new Date(detail.patientHistory.lastTriageDate).toLocaleString()
+                                patientHistory?.lastTriageDate
+                                    ? new Date(patientHistory.lastTriageDate).toLocaleString()
                                     : null,
                             ].filter(Boolean).join(" • ") || "Unavailable"}
                         />
                         <InfoRow
                             label="Last reasoning"
-                            value={detail?.patientHistory?.lastTriageRationale || "No prior triage reasoning recorded"}
+                            value={patientHistory?.lastTriageRationale || "No prior triage reasoning recorded"}
                         />
                         <InfoRow
                             label="Conditions"
-                            value={(detail?.patientHistory?.conditions || []).join(", ") || "None recorded"}
+                            value={(patientHistory?.conditions || []).join(", ") || "None recorded"}
                         />
                         <InfoRow
                             label="Medications"
-                            value={(detail?.patientHistory?.medications || []).join(", ") || "None recorded"}
+                            value={(patientHistory?.medications || []).join(", ") || "None recorded"}
                         />
                         <InfoRow
                             label="Allergies"
-                            value={(detail?.patientHistory?.allergies || []).join(", ") || "None recorded"}
+                            value={(patientHistory?.allergies || []).join(", ") || "None recorded"}
                         />
-                        <InfoRow label="Notes" value={detail?.patientHistory?.notes || "No additional notes"} />
-                        {!!detail?.patientHistory?.triageHistory?.length && (
+                        <InfoRow label="Notes" value={patientHistory?.notes || "No additional notes"} />
+                        {!!patientHistory?.triageHistory?.length && (
                             <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
                                 <div style={styles.summaryLabel}>Recent HealthLake Triage History</div>
-                                {detail.patientHistory.triageHistory.map((entry) => (
+                                {patientHistory.triageHistory.map((entry) => (
                                     <div key={entry.observationId || entry.date} style={styles.answerCard}>
                                         <div style={{ fontWeight: 700, marginBottom: 4 }}>
                                             {entry.color ? labelForColor(entry.color) : "Triage"}{" "}
@@ -666,6 +737,25 @@ function CaseFileModal({
 
             <CaseSection title="Triage Reasoning">
                 <div style={styles.readableText}>{displayRationale || "No rationale provided for this case."}</div>
+            </CaseSection>
+
+            <CaseSection title="Transcript">
+                <div style={styles.transcriptHeader}>
+                    <button
+                        type="button"
+                        style={styles.collapseButton}
+                        onClick={() => setTranscriptOpen((prev) => !prev)}
+                    >
+                        {transcriptOpen ? "Hide transcript" : "Show transcript"}
+                    </button>
+                </div>
+                {transcriptOpen ? (
+                    <div style={styles.transcript}>
+                        {detail?.transcript || "No transcript recorded for this case."}
+                    </div>
+                ) : (
+                    <div style={styles.mutedText}>Transcript hidden.</div>
+                )}
             </CaseSection>
 
             <div style={styles.midGrid}>
@@ -796,7 +886,16 @@ function CaseFileModal({
                 <div style={styles.imageDisclaimer}>
                     These images are visual references only. They are not the patient's images and do not confirm a diagnosis.
                 </div>
-                {!imageState || imageState.loading ? (
+                {!imageState ? (
+                    <div style={styles.modalActions}>
+                        <button
+                            style={btn("primary")}
+                            onClick={() => onLoadRelatedImages(item.riskId, detail?.answers || [])}
+                        >
+                            Load related images
+                        </button>
+                    </div>
+                ) : imageState.loading ? (
                     <div style={styles.mutedText}>Loading related images...</div>
                 ) : imageState.error ? (
                     <div style={{ color: "crimson" }}>{imageState.error}</div>
@@ -1112,6 +1211,38 @@ const styles = {
     backdrop: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, zIndex: 1000 },
     modal: { maxHeight: "calc(100vh - 48px)", overflow: "auto", background: "#fff", borderRadius: 20, boxShadow: "0 24px 80px rgba(15, 23, 42, 0.24)", padding: 20 },
     modalHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 14 },
+    caseStickyBar: {
+        position: "sticky",
+        top: -20,
+        zIndex: 5,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+        padding: "14px 16px",
+        margin: "-20px -20px 0",
+        background: "rgba(255, 255, 255, 0.96)",
+        borderBottom: "1px solid #e2e8f0",
+        backdropFilter: "blur(8px)",
+    },
+    caseStickyName: { fontSize: 18, fontWeight: 800, color: "#0f172a" },
+    caseStickyMeta: { display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#64748b", fontWeight: 700, flexWrap: "wrap" },
+    caseStickyContactWrap: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
+    contactChip: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: "1px solid #bfdbfe",
+        background: "#eff6ff",
+        color: "#1d4ed8",
+        textDecoration: "none",
+        fontWeight: 700,
+        fontSize: 13,
+    },
+    caseStickyMissing: { fontSize: 12, color: "#64748b", fontWeight: 700 },
     section: { border: "1px solid #e2e8f0", borderRadius: 16, background: "#fff", padding: 16 },
     sectionTitle: { fontWeight: 800, fontSize: 16, marginBottom: 12 },
     badge: { display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 },
@@ -1124,6 +1255,16 @@ const styles = {
     ratingPill: { display: "inline-flex", alignItems: "center", padding: "6px 12px", borderRadius: 999, color: "#fff", fontWeight: 700 },
     readableText: { margin: 0, lineHeight: 1.6, color: "#0f172a" },
     transcript: { whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, color: "#0f172a", maxHeight: 240, overflow: "auto" },
+    transcriptHeader: { display: "flex", justifyContent: "flex-end", marginBottom: 8 },
+    collapseButton: {
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #cbd5e1",
+        background: "#fff",
+        color: "#0f172a",
+        fontWeight: 700,
+        cursor: "pointer",
+    },
     summaryLabel: { fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#64748b", marginBottom: 6 },
     answerCard: { padding: "10px 12px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" },
     checkboxRow: { display: "flex", alignItems: "center", gap: 6 },
@@ -1155,3 +1296,5 @@ const styles = {
     select: { width: "100%", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1", minWidth: 220 },
     textarea: { width: "100%", padding: 10, borderRadius: 10, border: "1px solid #cbd5e1", resize: "vertical" },
 };
+
+

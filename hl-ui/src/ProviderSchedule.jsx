@@ -32,6 +32,18 @@ export default function ProviderSchedule() {
   }, []);
 
   useEffect(() => {
+    const styleId = "provider-schedule-spinner-style";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = "@keyframes providerScheduleSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }";
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     // Loads the server-backed schedule for the active week whenever week navigation changes.
@@ -135,6 +147,12 @@ export default function ProviderSchedule() {
       {error ? <div style={errorCard}>Error: {error}</div> : null}
 
       <div style={calendarShell}>
+        {loading ? (
+          <div style={loadingOverlay}>
+            <div style={spinner} />
+            <div style={loadingText}>Loading schedule...</div>
+          </div>
+        ) : null}
         {isMobile ? (
           <MobileAgenda days={days} loading={loading} />
         ) : (
@@ -638,6 +656,37 @@ const calendarShell = {
   margin: "0 auto",
   padding: "0 18px",
   overflowX: "auto",
+  position: "relative",
+  minHeight: 260,
+};
+
+const loadingOverlay = {
+  position: "absolute",
+  inset: "0 18px 0 18px",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 12,
+  borderRadius: 22,
+  background: "rgba(255, 255, 255, 0.72)",
+  backdropFilter: "blur(4px)",
+  zIndex: 3,
+};
+
+const spinner = {
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  border: "4px solid #dbeafe",
+  borderTopColor: "#1d4ed8",
+  animation: "providerScheduleSpin 0.9s linear infinite",
+};
+
+const loadingText = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#1e3a8a",
 };
 
 const gridShell = {

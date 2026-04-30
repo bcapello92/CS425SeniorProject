@@ -328,6 +328,32 @@ function dedupeStrings(values) {
   return [...new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+const responseCache = new Map();
+
+function readCache(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function writeCache(key, value, ttlMs) {
+  responseCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+  return value;
+}
+
+function clearCacheByPrefix(prefix) {
+  for (const key of responseCache.keys()) {
+    if (key.startsWith(prefix)) responseCache.delete(key);
+  }
+}
+
 async function fetchBundleResources(path, patientId, extraQueries = []) {
   const encodedPatientId = encodeURIComponent(patientId);
   const queries = [
@@ -484,8 +510,11 @@ app.get("/api/patient-history/:patientId", async (req, res) => {
   }
 
   try {
+    const cacheKey = `patient-history:${patientId}`;
+    const cached = readCache(cacheKey);
+    if (cached) return res.json(cached);
     const history = await getPatientHistory(patientId);
-    return res.json(history);
+    return res.json(writeCache(cacheKey, history, 30_000));
   } catch (e) {
     return res.status(e.status || 500).json({ error: e.message });
   }
@@ -1294,6 +1323,9 @@ app.get("/api/observations", async (req, res) => {
 app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermission("triage.read"), async (req, res) => {
   try {
     const hours = Math.max(1, Math.min(168, Number(req.query.sinceHours || 24)));
+    const cacheKey = `triage-cases:${hours}`;
+    const cached = readCache(cacheKey);
+    if (cached) return res.json(cached);
     const sinceIso = new Date(Date.now() - hours * 3600e3).toISOString();
     const bundle = await signedFetch({
       path: "/Observation",
@@ -1345,7 +1377,7 @@ app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermiss
       });
     }
 
-    res.json({
+    const payload = {
       since: sinceIso,
       counts: {
         red: groups.red.length,
@@ -1353,7 +1385,9 @@ app.get("/api/triage-cases", requireAuth,requireActiveMembership, requirePermiss
         blue: groups.blue.length,
       },
       groups,
-    });
+    };
+
+    res.json(writeCache(cacheKey, payload, 15_000));
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
@@ -1459,6 +1493,10 @@ app.post("/api/intake", async (req, res) => {
         patientId
     );
 
+    clearCacheByPrefix("triage-cases:");
+    clearCacheByPrefix("schedule-week:");
+    clearCacheByPrefix(`patient-history:${patientId}`);
+
     res.json({
       id: created?.id || null,
       color,
@@ -1489,6 +1527,10 @@ app.get(
     if (!riskId) {
       return res.status(400).json({ error: "riskId is required" });
     }
+
+    const cacheKey = `triage-detail:${riskId}`;
+    const cached = readCache(cacheKey);
+    if (cached) return res.json(cached);
 
     const obsId = riskId.replace(/^Observation\//, "");
     const obs = await signedFetch({
@@ -1537,11 +1579,9 @@ app.get(
 
     // --- patient info (non-fatal) ---
     let patient = null;
-    let patientHistory = null;
     const patientRef = obs?.subject?.reference; // e.g. "Patient/patien0"
     if (patientRef && /^Patient\//.test(patientRef)) {
       const pid = patientRef.replace(/^Patient\//, "");
-      patientHistory = await getPatientHistory(pid, { excludeObservationId: obs.id });
       try {
         const p = await signedFetch({
           path: `/Patient/${encodeURIComponent(pid)}`,
@@ -1549,18 +1589,21 @@ app.get(
         const nm = p?.name?.[0] || {};
         const full =
           [nm.given?.join(" "), nm.family].filter(Boolean).join(" ") || pid;
-        patient = { id: pid, name: full, birthDate: p.birthDate || null };
+        const telecom = Array.isArray(p?.telecom) ? p.telecom : [];
+        const phone = telecom.find((entry) => entry?.system === "phone")?.value || null;
+        const email = telecom.find((entry) => entry?.system === "email")?.value || null;
+        patient = { id: pid, name: full, birthDate: p.birthDate || null, phone, email };
       } catch (err) {
         console.warn(
           "[HL WARN] patient lookup failed",
           err.status || "",
           err.message || ""
         );
-        patient = { id: pid, name: pid, birthDate: null };
+        patient = { id: pid, name: pid, birthDate: null, phone: null, email: null };
       }
     }
 
-    res.json({
+    const payload = {
       id: obs.id,
       date:
         obs.effectiveDateTime ||
@@ -1573,10 +1616,12 @@ app.get(
       modelAccuracy,
       answers,
       patient,
-      patientHistory,
+      patientHistory: null,
       flags,
       override,
-    });
+    };
+
+    res.json(writeCache(cacheKey, payload, 30_000));
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
@@ -1710,6 +1755,9 @@ app.get(
   async (req, res) => {
     try {
       const rawStart = String(req.query.start || "").trim();
+      const cacheKey = `schedule-week:${rawStart || "current"}`;
+      const cached = readCache(cacheKey);
+      if (cached) return res.json(cached);
       const startDate = rawStart ? new Date(`${rawStart}T00:00:00`) : new Date();
       if (Number.isNaN(startDate.getTime())) {
         return res.status(400).json({ error: "start must be a valid YYYY-MM-DD date" });
@@ -1796,7 +1844,7 @@ app.get(
         });
       }
 
-      res.json({
+      const payload = {
         ok: true,
         range: {
           start: start.toISOString(),
@@ -1805,7 +1853,8 @@ app.get(
         total: appointments.length,
         appointments,
         days,
-      });
+      };
+      res.json(writeCache(cacheKey, payload, 15_000));
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message });
     }
@@ -1861,6 +1910,12 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
+      clearCacheByPrefix("triage-cases:");
+      clearCacheByPrefix("schedule-week:");
+      clearCacheByPrefix(`triage-detail:${rawId}`);
+      clearCacheByPrefix(`triage-detail:${riskId}`);
+      const patientId = obs?.subject?.reference?.replace(/^Patient\//, "");
+      if (patientId) clearCacheByPrefix(`patient-history:${patientId}`);
         logAudit({
             actor_membership_id: req.membership.id,
             actor_user_id: req.userId,
@@ -1947,6 +2002,12 @@ app.patch(
         path: `/Observation/${encodeURIComponent(riskId)}`,
         body: obs,
       });
+      clearCacheByPrefix("triage-cases:");
+      clearCacheByPrefix("schedule-week:");
+      clearCacheByPrefix(`triage-detail:${rawId}`);
+      clearCacheByPrefix(`triage-detail:${riskId}`);
+      const patientId = obs?.subject?.reference?.replace(/^Patient\//, "");
+      if (patientId) clearCacheByPrefix(`patient-history:${patientId}`);
         logAudit({
             actor_membership_id: req.membership.id,
             actor_user_id: req.userId,

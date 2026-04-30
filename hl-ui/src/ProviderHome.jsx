@@ -53,7 +53,6 @@ export default function ProviderHome() {
   }
 
   const triage = homeData?.summary?.triage;
-  const recentAudit = homeData?.recentAudit || [];
   const provider = homeData?.provider || {};
   const providerRoles = provider.roles || [];
   const providerPerms = new Set(provider.permissions || []);
@@ -81,10 +80,9 @@ export default function ProviderHome() {
             ) : (
               <>
                 <SummaryPill label="Open" value={triage?.openTotal ?? 0} />
-                <SummaryPill label="Red" value={triage?.counts?.red ?? 0} />
-                <SummaryPill label="Semi-Routine" value={triage?.counts?.orange ?? 0} />
-                <SummaryPill label="Routine" value={triage?.counts?.blue ?? 0} />
-                <SummaryPill label="Audit" value={homeData?.summary?.recentAuditCount ?? 0} />
+                <SummaryPill label="Red" value={triage?.counts?.red ?? 0} tone="red" />
+                <SummaryPill label="Semi-Routine" value={triage?.counts?.orange ?? 0} tone="orange" />
+                <SummaryPill label="Routine" value={triage?.counts?.blue ?? 0} tone="blue" />
               </>
             )}
           </div>
@@ -143,62 +141,9 @@ export default function ProviderHome() {
             />
           )}
         </div>
-
-        <div style={statusWrap}>
-          <div style={statusCard}>
-            <div style={auditHeader}>
-              <span style={auditPill}>Workflow Audit</span>
-            </div>
-            {!homeLoading && !homeError && recentAudit.length === 0 && (
-              <div style={smallText}>No audit entries yet.</div>
-            )}
-            {!homeLoading && !homeError && recentAudit.length > 0 && (
-              <div style={auditList}>
-                {recentAudit.map((row) => (
-                  <div key={row.id} style={auditRow}>
-                    <div style={auditAction}>{row.action}</div>
-                    <div style={smallText}>Submitted by: {row.actorEmail || row.actor_user_id || "unknown"}</div>
-                    <div style={smallText}>Changed: {formatAuditChange(row)}</div>
-                    <div style={smallText}>{row.at}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </main>
     </div>
   );
-}
-
-function formatAuditChange(row) {
-  const details = row?.details || {};
-
-  if (row?.action === "triage.flag.update" && details?.updates && typeof details.updates === "object") {
-    const items = Object.entries(details.updates).map(([k, v]) => `${k}=${String(v)}`);
-    return items.length ? items.join(", ") : "Flags updated";
-  }
-
-  if (row?.action === "triage.override") {
-    const color = details?.color ? `color=${details.color}` : "color updated";
-    const reason = details?.reason ? `, reason=${details.reason}` : "";
-    return `${color}${reason}`;
-  }
-
-  if (row?.action === "member.approve") {
-    const roles = Array.isArray(details?.roles) ? details.roles.join(", ") : "";
-    return roles ? `approved with roles=${roles}` : "member approved";
-  }
-
-  if (row?.action === "member.disable") {
-    return "member disabled";
-  }
-
-  if (details && Object.keys(details).length > 0) {
-    return JSON.stringify(details);
-  }
-
-  return `${row?.resource_type || "resource"} ${row?.resource_id || ""}`.trim();
 }
 
 function ClinicalCard({ title, desc, meta, onClick }) {
@@ -215,11 +160,12 @@ function ClinicalCard({ title, desc, meta, onClick }) {
   );
 }
 
-function SummaryPill({ label, value }) {
+function SummaryPill({ label, value, tone = "open" }) {
+  const toneStyle = summaryPillTones[tone] || summaryPillTones.open;
   return (
-    <div style={summaryPill}>
-      <span style={summaryPillLabel}>{label}</span>
-      <span style={summaryPillValue}>{value}</span>
+    <div style={{ ...summaryPill, ...toneStyle.wrap }}>
+      <span style={{ ...summaryPillLabel, ...toneStyle.label }}>{label}</span>
+      <span style={{ ...summaryPillValue, ...toneStyle.value }}>{value}</span>
     </div>
   );
 }
@@ -304,8 +250,6 @@ const summaryPill = {
   gap: 6,
   padding: "5px 10px",
   borderRadius: 999,
-  border: "1px solid #d9e4f5",
-  background: "#fff",
 };
 
 const summaryPillLabel = {
@@ -316,8 +260,30 @@ const summaryPillLabel = {
 
 const summaryPillValue = {
   fontSize: 12,
-  color: "#0f172a",
   fontWeight: 900,
+};
+
+const summaryPillTones = {
+  open: {
+    wrap: { border: "1px solid #dbe5f4", background: "#ffffff" },
+    label: { color: "#64748b" },
+    value: { color: "#0f172a" },
+  },
+  red: {
+    wrap: { border: "1px solid #fecaca", background: "#fef2f2" },
+    label: { color: "#991b1b" },
+    value: { color: "#991b1b" },
+  },
+  orange: {
+    wrap: { border: "1px solid #fed7aa", background: "#fff7ed" },
+    label: { color: "#c2410c" },
+    value: { color: "#c2410c" },
+  },
+  blue: {
+    wrap: { border: "1px solid #bfdbfe", background: "#eff6ff" },
+    label: { color: "#1d4ed8" },
+    value: { color: "#1d4ed8" },
+  },
 };
 
 const pillRow = {
@@ -410,65 +376,3 @@ const cardLink = {
   color: "#2563eb",
 };
 
-const statusWrap = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-  gap: 14,
-  marginTop: 14,
-};
-
-const statusCard = {
-  padding: 14,
-  borderRadius: 14,
-  border: "1px solid #e7edf5",
-  background: "#ffffff",
-  boxShadow: "0 1px 10px rgba(15, 23, 42, 0.04)",
-};
-
-const auditList = {
-  display: "grid",
-  gap: 8,
-  marginTop: 8,
-};
-
-const auditRow = {
-  padding: 10,
-  borderRadius: 10,
-  border: "1px solid #e7edf5",
-  background: "#f8fbff",
-};
-
-const auditAction = {
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#0f172a",
-  marginBottom: 4,
-};
-
-const auditHeader = {
-  marginBottom: 8,
-};
-
-const auditPill = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "4px 10px",
-  borderRadius: 999,
-  border: "1px solid #dbe5f4",
-  background: "#f7fbff",
-  color: "#1d4ed8",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const smallText = {
-  fontSize: 12,
-  color: "#64748b",
-};
-
-const calloutTitle = {
-  fontSize: 13,
-  fontWeight: 900,
-  color: "#0f172a",
-  marginBottom: 6,
-};
