@@ -606,19 +606,27 @@ function CaseFileModal({
     const patientEmail = detail?.patient?.email || null;
     const contactSummary = [patientPhone, patientEmail].filter(Boolean);
     const patientHistory = patientHistoryState?.data || null;
+    const headerTextColor = color === "orange" ? "#7c2d12" : "#ffffff";
+    const headerSubtleTextColor = color === "orange" ? "#9a3412" : "rgba(255, 255, 255, 0.84)";
     const stickyBarStyle = {
         ...styles.caseStickyBar,
-        background: "rgba(255, 255, 255, 0.96)",
-        borderTop: `6px solid ${colorBg(color)}`,
+        background: colorBg(color),
         borderBottom: `1px solid ${colorBg(color)}`,
+        color: headerTextColor,
+    };
+    const stickyChipStyle = {
+        ...styles.contactChip,
+        border: color === "orange" ? "1px solid rgba(124, 45, 18, 0.28)" : "1px solid rgba(255, 255, 255, 0.28)",
+        background: color === "orange" ? "rgba(255, 247, 237, 0.9)" : "rgba(255, 255, 255, 0.12)",
+        color: headerTextColor,
     };
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
             <div style={stickyBarStyle}>
                 <div style={{ display: "grid", gap: 4 }}>
-                    <div style={styles.caseStickyName}>{patientName}</div>
-                    <div style={styles.caseStickyMeta}>
+                    <div style={{ ...styles.caseStickyName, color: headerTextColor }}>{patientName}</div>
+                    <div style={{ ...styles.caseStickyMeta, color: headerSubtleTextColor }}>
                         <span>{patientId}</span>
                         <span>•</span>
                         <span>{labelForColor(color)}</span>
@@ -628,18 +636,20 @@ function CaseFileModal({
                     {contactSummary.length ? (
                         <>
                             {patientPhone ? (
-                                <a href={`tel:${patientPhone}`} style={styles.contactChip}>
+                                <a href={`tel:${patientPhone}`} style={stickyChipStyle}>
                                     Call {patientPhone}
                                 </a>
                             ) : null}
                             {patientEmail ? (
-                                <a href={`mailto:${patientEmail}`} style={styles.contactChip}>
+                                <a href={`mailto:${patientEmail}`} style={stickyChipStyle}>
                                     Email {patientEmail}
                                 </a>
                             ) : null}
                         </>
                     ) : (
-                        <span style={styles.caseStickyMissing}>No contact info on file</span>
+                        <span style={{ ...styles.caseStickyMissing, color: headerSubtleTextColor }}>
+                            No contact info on file
+                        </span>
                     )}
                 </div>
             </div>
