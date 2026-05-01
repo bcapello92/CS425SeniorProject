@@ -106,6 +106,37 @@ def keyword_fallback(payload: IntakePayload):
     return ("blue", "Fallback: no high-risk keywords detected; defaulting to routine.")
 
 
+def build_fallback_rationale(payload: IntakePayload, color: str) -> str:
+    text = build_patient_symptom_text(payload)
+
+    segments = []
+    for chunk in re.split(r"[\n,.;!?]+", text):
+        cleaned = re.sub(r"\s+", " ", chunk).strip(" -:")
+        if not cleaned:
+            continue
+        if cleaned in {"yes", "no", "not sure", "none", "n/a"}:
+            continue
+        if len(cleaned) < 4:
+            continue
+        segments.append(cleaned)
+
+    symptom = None
+    for segment in segments:
+        words = segment.split()
+        if len(words) >= 2:
+            symptom = " ".join(words[:6])
+            break
+
+    if not symptom:
+        symptom = "reported symptoms"
+
+    if color == "red":
+        return f"Reported {symptom} suggests emergency evaluation."
+    if color == "orange":
+        return f"Reported {symptom} supports prompt evaluation."
+    return f"Reported {symptom} supports routine evaluation."
+
+
 def extract_patient_only_transcript(transcript: str) -> str:
     if not transcript:
         return ""
@@ -459,6 +490,10 @@ def triage(payload: IntakePayload):
 
     if color not in ("red", "orange", "blue"):
         color = "blue"
+
+    if not rationale:
+        rationale = build_fallback_rationale(payload, color)
+        print("USING RATIONALE FALLBACK:", {"color": color, "rationale": rationale})
 
     final_confidence = label_probs.get(color)
     return {

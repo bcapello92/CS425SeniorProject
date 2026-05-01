@@ -787,24 +787,6 @@ function CaseFileModal({
                 )}
             </CaseSection>
 
-            <div style={styles.midGrid}>
-                <CaseSection title="Triage Summary">
-                    <div style={{ display: "grid", gap: 12 }}>
-                        {detail?.answers?.length ? (
-                            <div style={{ display: "grid", gap: 8 }}>
-                                <div style={styles.summaryLabel}>Intake Details</div>
-                                {detail.answers.map((answer) => (
-                                    <div key={`${answer.linkId || answer.text}-${answer.answer}`} style={styles.answerCard}>
-                                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{answer.text}</div>
-                                        <div style={{ color: "#334155" }}>{answer.answer}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : null}
-                    </div>
-                </CaseSection>
-            </div>
-
             <CaseSection title="Flags">
                 <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <label style={styles.checkboxRow}>
