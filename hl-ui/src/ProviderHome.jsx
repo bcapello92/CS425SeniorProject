@@ -1,61 +1,71 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { buildLogoutUrl } from "./auth.jsx";
+import { triageClient } from "./triageClient.js";
 import { useAuth } from "./useAuth";
-import { API_BASE } from "./config.js";
 
 export default function ProviderHome() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, me } = useAuth();
 
-  const [homeData, setHomeData] = useState(null);
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState("");
+  const [triage, setTriage] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
+    const permissions = new Set(me?.permissions || []);
+
+    if (!permissions.has("triage.read")) {
+      setTriage(null);
+      setHomeError("");
+      setHomeLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function loadHome() {
       try {
         setHomeLoading(true);
         setHomeError("");
 
-        const res = await fetch(`${API_BASE}/api/provider/home`, {
-          method: "GET",
-          credentials: "include",
+        const data = await triageClient.getBoard({ sinceHours: 168 });
+        if (cancelled) return;
+
+        const counts = data?.counts || { red: 0, orange: 0, blue: 0 };
+        setTriage({
+          counts,
+          openTotal:
+            Number(counts.red || 0) +
+            Number(counts.orange || 0) +
+            Number(counts.blue || 0),
         });
-
-        const ct = res.headers.get("content-type") || "";
-        const data = ct.includes("application/json")
-          ? await res.json()
-          : { error: await res.text() };
-
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `HTTP ${res.status}`);
-        }
-
-        if (!cancelled) setHomeData(data);
       } catch (e) {
-        if (!cancelled) setHomeError(e?.message || "Failed to load provider home data");
+        if (!cancelled) {
+          setHomeError(e?.message || "Failed to load provider home data");
+        }
       } finally {
         if (!cancelled) setHomeLoading(false);
       }
     }
 
     loadHome();
+    const intervalId = window.setInterval(loadHome, 30000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [me?.permissions]);
 
   function handleLogout() {
     logout?.();
     window.location.href = buildLogoutUrl();
   }
 
-  const triage = homeData?.summary?.triage;
-  const provider = homeData?.provider || {};
-  const providerRoles = provider.roles || [];
-  const providerPerms = new Set(provider.permissions || []);
+  const providerRoles = me?.roles || [];
+  const providerPerms = new Set(me?.permissions || []);
   const canAdmin = providerRoles.includes("admin") || providerPerms.has("members.manage");
 
   return (
@@ -77,6 +87,8 @@ export default function ProviderHome() {
               <div style={summaryBannerText}>Loading summary...</div>
             ) : homeError ? (
               <div style={summaryBannerError}>Summary unavailable</div>
+            ) : !providerPerms.has("triage.read") ? (
+              <div style={summaryBannerText}>No triage access</div>
             ) : (
               <>
                 <SummaryPill label="Open" value={triage?.openTotal ?? 0} />
@@ -375,4 +387,3 @@ const cardLink = {
   fontWeight: 800,
   color: "#2563eb",
 };
-
