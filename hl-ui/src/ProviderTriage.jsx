@@ -606,10 +606,15 @@ function CaseFileModal({
     const patientEmail = detail?.patient?.email || null;
     const contactSummary = [patientPhone, patientEmail].filter(Boolean);
     const patientHistory = patientHistoryState?.data || null;
+    const stickyBarStyle = {
+        ...styles.caseStickyBar,
+        background: colorTint(color),
+        borderBottom: `1px solid ${colorBg(color)}`,
+    };
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
-            <div style={styles.caseStickyBar}>
+            <div style={stickyBarStyle}>
                 <div style={{ display: "grid", gap: 4 }}>
                     <div style={styles.caseStickyName}>{patientName}</div>
                     <div style={styles.caseStickyMeta}>
