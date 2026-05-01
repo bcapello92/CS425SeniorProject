@@ -608,7 +608,8 @@ function CaseFileModal({
     const patientHistory = patientHistoryState?.data || null;
     const stickyBarStyle = {
         ...styles.caseStickyBar,
-        background: colorTint(color),
+        background: "rgba(255, 255, 255, 0.96)",
+        borderTop: `6px solid ${colorBg(color)}`,
         borderBottom: `1px solid ${colorBg(color)}`,
     };
 
