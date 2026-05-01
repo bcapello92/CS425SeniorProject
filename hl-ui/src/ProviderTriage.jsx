@@ -438,6 +438,7 @@ export default function ProviderTriage() {
                     subtitle={selectedDetail?.patient?.id || selectedItem.patientId}
                     onClose={closeCase}
                     width="min(1080px, 100%)"
+                    hideHeader
                 >
                     {!selectedState || selectedState.loading ? (
                         <div>Loading case file...</div>
@@ -463,6 +464,7 @@ export default function ProviderTriage() {
                                 }))
                             }
                             onSaveOverride={saveOverride}
+                            onClose={closeCase}
                         />
                     )}
                 </ModalShell>
@@ -595,6 +597,7 @@ function CaseFileModal({
     onOpenOverride,
     onPatchOverride,
     onSaveOverride,
+    onClose,
 }) {
     const flags = detail?.flags || {};
     const color = detail?.color || item?.color || "blue";
@@ -606,25 +609,32 @@ function CaseFileModal({
     const patientEmail = detail?.patient?.email || null;
     const contactSummary = [patientPhone, patientEmail].filter(Boolean);
     const patientHistory = patientHistoryState?.data || null;
-    const headerTextColor = color === "orange" ? "#7c2d12" : "#ffffff";
-    const headerSubtleTextColor = color === "orange" ? "#9a3412" : "rgba(255, 255, 255, 0.84)";
+    const headerTextColor = "#0f172a";
+    const headerSubtleTextColor = "#334155";
     const stickyBarStyle = {
         ...styles.caseStickyBar,
-        background: colorBg(color),
-        borderBottom: `1px solid ${colorBg(color)}`,
+        background: headerBg(color),
+        borderBottom: `1px solid ${headerBorder(color)}`,
         color: headerTextColor,
     };
     const stickyChipStyle = {
         ...styles.contactChip,
-        border: color === "orange" ? "1px solid rgba(124, 45, 18, 0.28)" : "1px solid rgba(255, 255, 255, 0.28)",
-        background: color === "orange" ? "rgba(255, 247, 237, 0.9)" : "rgba(255, 255, 255, 0.12)",
+        border: `1px solid ${headerBorder(color)}`,
+        background: "rgba(255, 255, 255, 0.72)",
         color: headerTextColor,
+    };
+    const closeButtonStyle = {
+        ...btn("secondary"),
+        border: `1px solid ${headerBorder(color)}`,
+        background: "rgba(255, 255, 255, 0.82)",
+        color: headerTextColor,
+        fontWeight: 700,
     };
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
             <div style={stickyBarStyle}>
-                <div style={{ display: "grid", gap: 4 }}>
+                <div style={{ display: "grid", gap: 4, flex: 1, minWidth: 0 }}>
                     <div style={{ ...styles.caseStickyName, color: headerTextColor }}>{patientName}</div>
                     <div style={{ ...styles.caseStickyMeta, color: headerSubtleTextColor }}>
                         <span>{patientId}</span>
@@ -651,6 +661,9 @@ function CaseFileModal({
                             No contact info on file
                         </span>
                     )}
+                    <button type="button" style={closeButtonStyle} onClick={onClose}>
+                        Close
+                    </button>
                 </div>
             </div>
 
@@ -956,7 +969,7 @@ function CaseFileModal({
     );
 }
 
-function ModalShell({ title, subtitle, children, onClose, width = "min(760px, 100%)" }) {
+function ModalShell({ title, subtitle, children, onClose, width = "min(760px, 100%)", hideHeader = false }) {
     useEffect(() => {
         function handleKeyDown(event) {
             if (event.key === "Escape") {
@@ -971,13 +984,15 @@ function ModalShell({ title, subtitle, children, onClose, width = "min(760px, 10
     return (
         <div onClick={onClose} style={styles.backdrop}>
             <div onClick={(e) => e.stopPropagation()} style={{ ...styles.modal, width }}>
-                <div style={styles.modalHeader}>
-                    <div>
-                        <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
-                        {subtitle ? <div style={styles.mutedText}>{subtitle}</div> : null}
+                {!hideHeader ? (
+                    <div style={styles.modalHeader}>
+                        <div>
+                            <div style={{ fontWeight: 800, fontSize: 20 }}>{title}</div>
+                            {subtitle ? <div style={styles.mutedText}>{subtitle}</div> : null}
+                        </div>
+                        <button style={btn("secondary")} onClick={onClose}>Close</button>
                     </div>
-                    <button style={btn("secondary")} onClick={onClose}>Close</button>
-                </div>
+                ) : null}
                 {children}
             </div>
         </div>
@@ -1059,6 +1074,18 @@ function colorBg(c) {
     if (c === "red") return "#dc2626";
     if (c === "orange") return "#ea580c";
     return "#1e40af";
+}
+
+function headerBg(c) {
+    if (c === "red") return "rgba(254, 226, 226, 0.78)";
+    if (c === "orange") return "rgba(255, 237, 213, 0.78)";
+    return "rgba(219, 234, 254, 0.82)";
+}
+
+function headerBorder(c) {
+    if (c === "red") return "rgba(220, 38, 38, 0.28)";
+    if (c === "orange") return "rgba(234, 88, 12, 0.28)";
+    return "rgba(30, 64, 175, 0.24)";
 }
 
 function colorTint(c) {
@@ -1312,5 +1339,7 @@ const styles = {
     select: { width: "100%", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1", minWidth: 220 },
     textarea: { width: "100%", padding: 10, borderRadius: 10, border: "1px solid #cbd5e1", resize: "vertical" },
 };
+
+
 
 
