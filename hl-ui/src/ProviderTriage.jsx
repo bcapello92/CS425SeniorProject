@@ -20,6 +20,7 @@ function useTranslatedDisplayText(text) {
         let cancelled = false;
         setDisplayText(source);
 
+        // Translate only provider-facing Spanish rationale text; keep the stored case payload unchanged.
         if (!source || !looksLikeSpanish(source)) {
             return () => {
                 cancelled = true;
@@ -139,6 +140,7 @@ export default function ProviderTriage() {
     async function ensurePatientHistoryLoaded(riskId, patientId) {
         if (!riskId || !patientId) return;
         if (historyState[riskId]?.loading || historyState[riskId]?.data) return;
+        // Keep modal open latency low by loading history after the shell renders.
         setHistoryState((prev) => ({
             ...prev,
             [riskId]: { loading: true, error: null, data: null },
@@ -205,6 +207,7 @@ export default function ProviderTriage() {
                     },
                 };
             });
+            // Completed cases fall off the board once both operational flags are set.
             const merged = { ...(detail[riskId]?.data?.flags || {}), ...(updates || {}) };
             if (merged.contacted && merged.scheduled) removeFromBoard(riskId);
         } catch (e) {
@@ -693,6 +696,7 @@ function CaseFileModal({
             </div>
 
             <CaseSection title="Patient History">
+                {/* Patient history is fetched separately so the modal can render before HealthLake lookups finish. */}
                 {patientHistoryState?.loading ? (
                     <div style={styles.mutedText}>Loading patient history...</div>
                 ) : patientHistoryState?.error ? (
@@ -897,6 +901,7 @@ function CaseFileModal({
                 <div style={styles.imageDisclaimer}>
                     These images are visual references only. They are not the patient's images and do not confirm a diagnosis.
                 </div>
+                {/* Image search is opt-in because it is a non-critical, slower provider-side lookup. */}
                 {!imageState ? (
                     <div style={styles.modalActions}>
                         <button

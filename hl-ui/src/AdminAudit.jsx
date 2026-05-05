@@ -43,6 +43,7 @@ export default function AdminAudit() {
 
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    // Filter on the rendered audit payload instead of relying on one backend-specific field.
     return rows.filter((row) => {
       if (!matchesFilter(row, filter)) return false;
       if (!needle) return true;
@@ -202,6 +203,7 @@ function renderDetails(row) {
 function describeAuditDetails(row, details) {
   const action = String(row?.action || "");
 
+  // Turn the raw audit payloads into short, provider-readable summaries.
   if (action === "triage.override") {
     const nextColor = details?.color ? formatTriageColor(details.color) : "Unknown";
     return [

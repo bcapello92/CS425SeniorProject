@@ -328,6 +328,7 @@ function dedupeStrings(values) {
   return [...new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+// Lightweight in-memory cache for the provider UI's hottest read paths.
 const responseCache = new Map();
 
 function readCache(key) {
@@ -388,6 +389,7 @@ async function fetchBundleResources(path, patientId, extraQueries = []) {
 }
 
 async function fetchClinicalHistory(patientId) {
+  // Pull non-triage clinical context in parallel so the provider modal can merge it into one history view.
   const [conditions, medications, allergies] = await Promise.all([
     fetchBundleResources("/Condition", patientId),
     fetchBundleResources("/MedicationRequest", patientId),
@@ -1199,6 +1201,7 @@ logResolvedAwsCredentials().catch((err) => {
 });
 
 async function signedFetch({ method = "GET", path = "", query = "", body }) {
+  // All HealthLake reads and writes go through one SigV4-signed transport path.
   const queryParams = query ? Object.fromEntries(new URLSearchParams(query)) : undefined;
 
   const resolved = await logResolvedAwsCredentials();
@@ -1528,6 +1531,7 @@ app.get(
       return res.status(400).json({ error: "riskId is required" });
     }
 
+    // Keep the case shell fast; patient history is loaded lazily from its dedicated endpoint.
     const cacheKey = `triage-detail:${riskId}`;
     const cached = readCache(cacheKey);
     if (cached) return res.json(cached);

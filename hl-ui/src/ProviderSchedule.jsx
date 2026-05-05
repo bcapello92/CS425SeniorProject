@@ -46,7 +46,7 @@ export default function ProviderSchedule() {
   useEffect(() => {
     let cancelled = false;
 
-    // Loads the server-backed schedule for the active week whenever week navigation changes.
+    // Reload schedule data whenever the viewed week changes.
     async function loadSchedule() {
       try {
         setLoading(true);
@@ -81,6 +81,7 @@ export default function ProviderSchedule() {
 
     const nextIso = nextLocalDate.toISOString();
     const previousData = data;
+    // Update the UI immediately, then reconcile if the backend write fails.
     const nextData = updateAppointmentInSchedule(data, riskId, nextIso);
     if (!nextData) return;
 
@@ -194,7 +195,7 @@ export default function ProviderSchedule() {
   );
 }
 
-// Desktop view renders the weekly grid and exposes drag targets for half-hour rescheduling.
+// Desktop view renders the fixed slot grid and exposes drag targets for half-hour rescheduling.
 function DesktopWeekGrid({
   days,
   loading,
@@ -269,7 +270,7 @@ function DesktopWeekGrid({
   );
 }
 
-// Mobile view falls back to a simple agenda list without drag-and-drop interactions.
+// Mobile view stays read-only; drag-and-drop is intentionally desktop-only.
 function MobileAgenda({ days, loading }) {
   return (
     <div>
@@ -310,7 +311,7 @@ function MobileAgenda({ days, loading }) {
   );
 }
 
-// Individual scheduled appointment card used inside the desktop week grid.
+// Compute vertical placement from the appointment start time rather than storing layout state separately.
 function AppointmentBlock({ item, isDragging, isSaving, onDragStart, onDragEnd }) {
   const startDate = new Date(item.appointmentAt);
   const minutes = startDate.getHours() * 60 + startDate.getMinutes();
@@ -409,7 +410,7 @@ function getSlotTop(slotIndex) {
   return slotIndex * (DESKTOP_ROW_HEIGHT / 2);
 }
 
-// Schedule update helper rewrites the cached weekly data after a drag/drop move succeeds locally.
+// Rebuild the local week snapshot after a drag/drop move so the calendar stays responsive.
 function updateAppointmentInSchedule(scheduleData, riskId, nextIso) {
   if (!scheduleData) return null;
 
